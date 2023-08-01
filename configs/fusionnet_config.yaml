@@ -1,0 +1,22 @@
+optimizer:
+  name: 'adam'
+  lr: !!float 5e-4
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+#  name: 'multi_step'
+#  milestones: [100, 250, 400, 600, 800]
+#  gamma: 0.5
+  name: 'cos_anneal'
+  T_max: 1500
+  eta_min: !!float 1e-6
+
+max_norm: 0.01
+
+path:
+  train_path: '/Data2/DataSet/pansharpening/training_data/train_wv3.h5'
+  val_path: '/Data2/DataSet/pansharpening/training_data/valid_wv3.h5'
+
+network_configs:
+  spectral_num: 8
+  channel: 32
