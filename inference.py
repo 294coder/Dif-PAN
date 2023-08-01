@@ -102,6 +102,9 @@ print("=" * 50)
 p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
 
 
+# test
+
+
 # p = './weight/gppnn_104ji7i6.pth'  # gppnn
 # ========================================================
 
