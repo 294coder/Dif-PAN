@@ -40,7 +40,7 @@
 
 ## dcformer arch
 python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \
--b 64 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
+-b 64 --device 'cuda:1' --dataset 'wv3' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
 --loss 'l1ssim' --val_n_epoch 10 --comment '根据wx的新代码进行 wv3 的训练' \
 --ergas_ratio 4 \
