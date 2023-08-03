@@ -27,10 +27,11 @@ max_norm: 0.3
 path:
   # train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
   # val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
-#   train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv2/reduced_examples/test_wv2_multiExm1.h5"
 #   val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
-   train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-   val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5'
+  #  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5'
   #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
 #  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
 #  val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'

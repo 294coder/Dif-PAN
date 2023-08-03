@@ -56,6 +56,8 @@ def get_args():
             "lformer",
             "gppnn",
             "pmacnet",
+            "gppnn_cvpr",
+            "hyper_transformer"
         ],
     )
     parser.add_argument(

@@ -266,7 +266,9 @@ class HpBranch(nn.Module):
 
 @register_model("lformer")
 class AttnFuseMain(BaseModel):
-    def __init__(self, pan_dim, lms_dim, attn_dim, hp_dim, n_stage=3) -> None:
+    def __init__(self, pan_dim, lms_dim, attn_dim, hp_dim, n_stage=3,
+                 patch_merge=True, crop_batch_size=1, patch_size_list=None,
+                 scale=4) -> None:
         super().__init__()
         self.n_stage = n_stage
 
@@ -289,6 +291,17 @@ class AttnFuseMain(BaseModel):
             Resblock(hp_dim * 2),
             nn.Conv2d(hp_dim * 2, lms_dim, 1)
         )
+        
+        self.patch_merge = patch_merge
+        if patch_merge:
+            from model.base_model import PatchMergeModule
+            self._patch_merge_model = PatchMergeModule(
+                # net=self,
+                patch_merge_step=self.patch_merge_step,
+                crop_batch_size=crop_batch_size,
+                patch_size_list=patch_size_list,
+                scale=scale,
+            )
 
     def _forward_implem(self, lms, pan):
         reused_attn, refined_lms = self.attn(lms, pan)
@@ -313,10 +326,16 @@ class AttnFuseMain(BaseModel):
         return out.clip(0, 1), loss
 
     def val_step(self, ms, lms, pan):
-        pred = self._forward_implem(lms, pan)
+        if self.patch_merge:
+            pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
+        else:
+            pred = self._forward_implem(lms, pan)
         out = pred + lms
 
         return out.clip(0, 1)
+    
+    def patch_merge_step(self, ms, lms, pan):
+        return self._forward_implem(lms, pan)
 
 
 if __name__ == "__main__":
@@ -331,12 +350,17 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
+    ms = torch.randn(1, 8, 170, 170).cuda(1)
+    lms = torch.randn(1, 8, 680, 680).cuda(1)
+    pan = torch.randn(1, 1, 680, 680).cuda(1)
 
-    lms = torch.randn(1, 8, 64, 64).cuda(1)
-    pan = torch.randn(1, 1, 64, 64).cuda(1)
-
-    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=32, hp_dim=32, n_stage=1).cuda(1)
-    net.forward = partial(_only_for_flops_count_forward, net)
+    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=32, hp_dim=32, n_stage=1,
+                       patch_merge=True, patch_size_list=[16,64,64], scale=4,
+                       crop_batch_size=32).cuda(1)
+    # net.forwardlf = partial(_only_for_flops_count_forward, net)
+    sr = net.val_step(ms, lms, pan)
+    print(sr.shape)
+    
     #
-    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)

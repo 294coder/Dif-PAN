@@ -28,6 +28,10 @@ from model.dcformer_mwsa_wx import DCFormerMWSA
 # from model.mmnet import MMNet
 # from model.pmacnet import PMACNet
 
+from model.LFormer import AttnFuseMain
+from model.gppnn_cvpr import GPPNN
+from model.hypertransformer import HyperTransformer
+
 # ablation
 # from model.dcformer_abla_only_channel_attn import DCFormer_XCA
 # from model.dcformer_abla_only_mwa import DCFormerOnlyMWA

@@ -47,15 +47,12 @@
 #  --pretrain --pretrain_id '2oy4iqpj'
 
 ## dcformer_mwsa arch
-python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \
--b 54 --device 'cuda:1' --dataset 'gf' --logger_on --log_metrics \
+python main.py --proj_name dcformer --arch hyper_transformer \
+-b 4 --device 'cuda:1' --dataset 'hisi' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
---loss 'l1ssim' --val_n_epoch 10 --comment '根据wx的新代码进行 gf 的训练' \
+--loss 'l1ssim' --val_n_epoch 40 --comment '进行chikusei的测试 of hyper transformer' \
 --ergas_ratio 4 \
-#--pretrain --pretrain_id '1g9ljhul'
- # wv3 1bl6zko2
- # qb 12rzaqcu
-
+--pretrain --pretrain_id '23106a0l'
 
 
 ## lformer arch

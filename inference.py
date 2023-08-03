@@ -27,14 +27,14 @@ from utils.visualize import invert_normalized
 device = "cuda:1"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "wv2"
+dataset_type = "gf"
 save_format = "mat"
-full_res = False
+full_res = True
 split_patch = False
 patch_size = 128
 ergas_ratio = 4
 patch_size_list = [patch_size // ergas_ratio, patch_size, patch_size]  # ms, lms, pan
-save_mat = False
+save_mat = True
 loop_func = (
     partial(
         ref_for_loop,
@@ -99,10 +99,8 @@ print("=" * 50)
 # p = './weight/dcformer_hbnwhpe8/ep_230.pth'  # dcformer_mwsa (r)
 # p = './weight/dcformer_1g9ljhul.pth'   # dcformer_mwsa wx 8 CAttn; poor performance on wv2
 
-p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
-
-
-# test
+# p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
+# p = './weight/dcformer_a6it872k.pth'
 
 
 # p = './weight/gppnn_104ji7i6.pth'  # gppnn
@@ -141,6 +139,11 @@ p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
 
 # p = './weight/dcformer_ko3dx5dh/ep_100.pth'  # dcformer_mwsa (r)
 
+#### Chikusei x4
+# p = './weight/lformer_2h3ou2lq.pth'  # lformer
+# p = './weight/gppnn_cvpr_34qqrilh.pth'  # gppnn_cvpr
+
+
 # =================================================
 
 # ===============GF checkpoint=====================
@@ -148,6 +151,9 @@ p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
 # p = './weight/dcformer_d9hhb681.pth'  # dcformer_mwsa
 # p = './weight/dcformer_2sn1ox21.pth'  # dcformer_mwsa 1/6
 # p = './weight/dcformer_3b0qmez5/ep_90.pth'  # dcformer_mwsa (r)
+
+# p = './weight/dcformer_36tmqq1p.pth'  # dcformer_mwsa new wx retrain
+p = './weight/dcformer_36tmqq1p.pth'
 
 # p = './weight/dcfnet_2k1xjqom.pth'  # dcfnet
 
@@ -222,10 +228,10 @@ elif dataset_type == "harvard_x8":
     path = "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 elif dataset_type == "gf":
     if not full_res:
-        path = "/media/office-401-remote/Elements SE/cao//ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+        path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/gf/full_examples/test_gf2_OrigScale_multiExm1.h5'
-        path = "/media/office-401-remote/Elements SE/cao//ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
+        path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
 elif dataset_type == "qb":
     if not full_res:
         path = "/media/office-401-remote/Elements SE/cao//ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"

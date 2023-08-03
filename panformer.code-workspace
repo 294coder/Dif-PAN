@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "panformer @ f3e69cd",
+			"uri": "gitlens://7b22726566223a2266336536396364373639363265636638613266643966666432646634353232333963363330356632222c227265706f50617468223a222f6d656469612f6f66666963652d3430312f456c656d656e74732053452f63616f2f5a6948616e43616f2f657870732f70616e666f726d6572227d/media/office-401/Elements SE/cao/ZiHanCao/exps/panformer?{\"ref\":\"f3e69cd\"}"
+		}
+	],
+	"settings": {
+		"terminal.integrated.env.osx": {
+			"PYTHONPATH": "${workspaceFolder}/"
+		},
+		"terminal.integrated.env.linux": {
+			"PYTHONPATH": "${workspaceFolder}/"
+		},
+		"terminal.integrated.env.windows": {
+			"PYTHONPATH": "${workspaceFolder}/"
+		}
+	}
+}
