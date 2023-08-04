@@ -522,16 +522,17 @@ class HyperTransformer(BaseModel):
         super(HyperTransformer, self).__init__()
         # Settings
         self.is_DHP_MS      = False #config["is_DHP_MS"]
-        self.in_channels    = 128 #config[config["train_dataset"]]["spectral_bands"]
-        self.out_channels   = 128 #config[config["train_dataset"]]["spectral_bands"]
+        self.in_channels    = 102 #128 #config[config["train_dataset"]]["spectral_bands"]
+        self.out_channels   = 102 #128 #config[config["train_dataset"]]["spectral_bands"]
         self.factor         = 4 #config[config["train_dataset"]]["factor"]
+        self.pan_dim        = 1
 
         self.num_res_blocks = [16, 1, 1, 1, 4]
         self.n_feats        = 256
         self.res_scale      = 1
 
         self.LFE_HSI    = LFE(in_channels=self.in_channels)
-        self.LFE_PAN    = LFE(in_channels=3)
+        self.LFE_PAN    = LFE(in_channels=self.pan_dim)
         # Scaled dot product attention
         lv1_dim      = 16**2  #config[config["train_dataset"]]["LR_size"]**2
         lv2_dim      = 2*16**2  #(2*config[config["train_dataset"]]["LR_size"])**2

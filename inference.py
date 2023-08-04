@@ -146,6 +146,8 @@ print("=" * 50)
 # p = './weight/hyper_transformer_1p6jqhkg.pth' # hypertransformer
 
 
+# Pavia
+p = './weight/lformer_1j2d233a.pth'  # lformer
 
 
 
