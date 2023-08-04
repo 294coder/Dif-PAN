@@ -48,7 +48,7 @@
 
 ## dcformer_mwsa arch
 python main.py --proj_name dcformer --arch hyper_transformer \
--b 20 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
+-b 64 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
 --loss 'l1ssim' --val_n_epoch 10 --comment '进行pavia的测试 of hypertransformer' \
 --ergas_ratio 4 \

@@ -2,6 +2,7 @@
 /.idea/
 /.ipynb_checkpoints/
 /.vscode/
+/__pycache__/
 /DLPan-Toolbox/
 /log_file/
 /loss_landscape/
@@ -14,4 +15,6 @@
 /runs/
 /Matlab-Test-Package/
 _test.py
+test.py
 nohup.out
+panformer.code-workspace
