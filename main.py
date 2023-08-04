@@ -306,7 +306,8 @@ def main(local_rank, args):
                     WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
             elif args.dataset == "hisi":
-                keys = ["LRHSI", "HSI_up", "RGB", "GT"]
+                # keys = ["LRHSI", "HSI_up", "RGB", "GT"]
+                keys = None
                 d_train, d_val = (
                     h5py_to_dict(h5_train, keys),
                     h5py_to_dict(h5_val, keys),

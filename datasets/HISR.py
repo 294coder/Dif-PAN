@@ -80,21 +80,25 @@ class HISRDataSets(data.Dataset):
 
     def _split_parts(self, file, normalize=False, load_all=True, rgb_to_bgr=False):
         # has already been normalized
+        
+        # keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
+        keys = ['GT', 'MS', 'PAN', 'LMS']
+        
         if load_all:
             # load all data in memory
             if normalize:
                 return (
-                    torch.tensor(file["GT"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["LRHSI"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["RGB"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["HSI_up"][:], dtype=torch.float32) / 2047.0,
+                    torch.tensor(file[keys[0]][:], dtype=torch.float32) / 2047.0,
+                    torch.tensor(file[keys[1]][:], dtype=torch.float32) / 2047.0,
+                    torch.tensor(file[keys[2]][:], dtype=torch.float32) / 2047.0,
+                    torch.tensor(file[keys[3]][:], dtype=torch.float32) / 2047.0,
                 )
             else:
                 data = [
-                    torch.tensor(file["GT"][:], dtype=torch.float32),
-                    torch.tensor(file["LRHSI"][:], dtype=torch.float32),
-                    torch.tensor(file["RGB"][:], dtype=torch.float32),
-                    torch.tensor(file["HSI_up"][:], dtype=torch.float32),
+                    torch.tensor(file[keys[0]][:], dtype=torch.float32),
+                    torch.tensor(file[keys[1]][:], dtype=torch.float32),
+                    torch.tensor(file[keys[2]][:], dtype=torch.float32),
+                    torch.tensor(file[keys[3]][:], dtype=torch.float32),
                 ]
                 if rgb_to_bgr:
                     print("warning: rgb to bgr, for testing generalization only.")

@@ -143,6 +143,11 @@ print("=" * 50)
 # p = './weight/lformer_2h3ou2lq.pth'  # lformer
 # p = './weight/gppnn_cvpr_34qqrilh.pth'  # gppnn_cvpr
 
+# p = './weight/hyper_transformer_1p6jqhkg.pth' # hypertransformer
+
+
+
+
 
 # =================================================
 

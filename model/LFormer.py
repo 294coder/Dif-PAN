@@ -287,9 +287,9 @@ class AttnFuseMain(BaseModel):
 
         # self.final_conv = nn.Conv2d(hp_dim, lms_dim, 1)
         self.final_conv = nn.Sequential(
-            Resblock(hp_dim * 2),
-            Resblock(hp_dim * 2),
-            nn.Conv2d(hp_dim * 2, lms_dim, 1)
+            Resblock(hp_dim + attn_dim),
+            Resblock(hp_dim + attn_dim),
+            nn.Conv2d(hp_dim + attn_dim, lms_dim, 1)
         )
         
         self.patch_merge = patch_merge
@@ -350,17 +350,17 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 8, 170, 170).cuda(1)
-    lms = torch.randn(1, 8, 680, 680).cuda(1)
-    pan = torch.randn(1, 1, 680, 680).cuda(1)
+    ms = torch.randn(1, 8, 16, 16).cuda(1) 
+    lms = torch.randn(1, 8, 64, 64).cuda(1)
+    pan = torch.randn(1, 1, 64, 64).cuda(1)
 
-    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=32, hp_dim=32, n_stage=1,
+    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5,
                        patch_merge=True, patch_size_list=[16,64,64], scale=4,
                        crop_batch_size=32).cuda(1)
-    # net.forwardlf = partial(_only_for_flops_count_forward, net)
-    sr = net.val_step(ms, lms, pan)
-    print(sr.shape)
+    net.forward = partial(_only_for_flops_count_forward, net)
+    # sr = net.val_step(ms, lms, pan)
+    # print(sr.shape)
     
-    #
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    # print(net(lms, pan).shape)
+    
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    print(net(lms, pan).shape)

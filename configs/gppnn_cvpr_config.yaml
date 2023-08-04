@@ -16,13 +16,14 @@ path:
   # val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
   # train_path: "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
   # val_path: "/media/office-401-remote/Elements SE/cao/cavex4/test_cavepatches64-2.h5"
-  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/train_Chikusei.h5"
-  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/test_Chikusei.h5"
+  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
+  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+
 
 
 network_configs:
-  ms_channels: 128
-  pan_channels: 3
+  ms_channels: 102 #128
+  pan_channels: 1 #3
   n_feat: 64
   n_layer: 8
 

@@ -47,12 +47,12 @@
 #  --pretrain --pretrain_id '2oy4iqpj'
 
 ## dcformer_mwsa arch
-python main.py --proj_name dcformer --arch hyper_transformer \
--b 4 --device 'cuda:1' --dataset 'hisi' --logger_on --log_metrics \
+python main.py --proj_name dcformer --arch lformer \
+-b 52 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
---loss 'l1ssim' --val_n_epoch 40 --comment '进行chikusei的测试 of hyper transformer' \
+--loss 'l1ssim' --val_n_epoch 10 --comment '进行pavia的测试 of lformer' \
 --ergas_ratio 4 \
---pretrain --pretrain_id '23106a0l'
+# --pretrain --pretrain_id '23106a0l'
 
 
 ## lformer arch
