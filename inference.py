@@ -147,7 +147,11 @@ print("=" * 50)
 
 
 # Pavia
-p = './weight/lformer_1j2d233a.pth'  # lformer
+p = './weight/lformer_3iybu4er.pth'  # lformer
+
+
+# bostwana
+
 
 
 

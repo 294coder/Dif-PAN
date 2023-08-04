@@ -539,7 +539,7 @@ class HyperTransformer(BaseModel):
         lv3_dim      = 4*16**2  #(4*config[config["train_dataset"]]["LR_size"])**2
 
         # Number of Heads in Multi-Head Attention Module
-        n_head          = 0 #config["N_modules"]
+        n_head          = 4 #config["N_modules"]
         
         # Setting up Multi-Head Attention or Single-Head Attention
         if n_head == 0:
@@ -555,20 +555,20 @@ class HyperTransformer(BaseModel):
             self.TS_lv1     = ScaledDotProductAttentionOnly(temperature=lv3_dim)
         else:   
             ### Multi-Head Attention ###
-            lv1_pixels      = config[config["train_dataset"]]["LR_size"]**2
-            lv2_pixels      = (2*config[config["train_dataset"]]["LR_size"])**2
-            lv3_pixels      = (4*config[config["train_dataset"]]["LR_size"])**2
+            lv1_pixels      = 16**2  #config[config["train_dataset"]]["LR_size"]**2
+            lv2_pixels      = (2*16)**2  #(2*config[config["train_dataset"]]["LR_size"])**2
+            lv3_pixels      = (4*16)**2  #(4*config[config["train_dataset"]]["LR_size"])**2
             self.TS_lv3     = MultiHeadAttention(   n_head= int(n_head), 
                                                     in_pixels = int(lv1_pixels), 
-                                                    linear_dim = int(config[config["train_dataset"]]["LR_size"]), 
+                                                    linear_dim = 16, #int(config[config["train_dataset"]]["LR_size"]), 
                                                     num_features = self.n_feats)
             self.TS_lv2     = MultiHeadAttention(   n_head= int(n_head), 
                                                     in_pixels= int(lv2_pixels), 
-                                                    linear_dim= int(config[config["train_dataset"]]["LR_size"]), 
+                                                    linear_dim= 16,  #int(config[config["train_dataset"]]["LR_size"]), 
                                                     num_features=int(self.n_feats/2))
             self.TS_lv1     = MultiHeadAttention(   n_head= int(n_head), 
                                                     in_pixels = int(lv3_pixels), 
-                                                    linear_dim = int(config[config["train_dataset"]]["LR_size"]), 
+                                                    linear_dim = 16,  #int(config[config["train_dataset"]]["LR_size"]), 
                                                     num_features=int(self.n_feats/4))
         
         self.SFE        = SFE(self.in_channels, self.num_res_blocks[0], self.n_feats, self.res_scale)
@@ -963,10 +963,10 @@ if __name__ == '__main__':
     
     net = HyperTransformer().cuda()
 
-    ms = torch.randn(1, 128, 85, 85).cuda()
-    lms = torch.randn(1, 128, 85, 85).cuda()
-    pan = torch.randn(1, 3, 340, 340).cuda()
-    gt = torch.randn(1, 128, 340, 340).cuda()
+    ms = torch.randn(1, 102, 16, 16).cuda()
+    lms = torch.randn(1, 102, 16, 16).cuda()
+    pan = torch.randn(1, 1, 64, 64).cuda()
+    gt = torch.randn(1, 102, 64, 64).cuda()
     
     # print(net(ms,pan)['pred'].shape)
     
