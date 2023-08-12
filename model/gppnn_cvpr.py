@@ -122,8 +122,14 @@ class GPPNN(BaseModel):
     
     
 if __name__ == '__main__':
-    net = GPPNN(4, 1, 64, 8)
-    ms = torch.randn(1,4,16,16)
+    from fvcore.nn import flop_count_table, FlopCountAnalysis
+    
+    net = GPPNN(102, 3, 64, 8)
+    ms = torch.randn(1,102,16,16)
     pan = torch.randn(1,1,64,64)
     
-    print(net.val_step(ms, ms, pan).shape)
+    net.forward = net._forward_implem
+    
+    print(flop_count_table(FlopCountAnalysis(net, (ms, pan))))
+    
+    # print(net.val_step(ms, ms, pan).shape)

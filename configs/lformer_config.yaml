@@ -18,8 +18,10 @@ path:
   # val_path: "/media/office-401-remote/Elements SE/cao/cavex4/test_cavepatches64-2.h5"
   # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/train_Chikusei.h5"
   # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/test_Chikusei.h5"
-  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
-  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
+  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Train_Botswana.h5"
+  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
 
 #   train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
 #   val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
@@ -34,10 +36,10 @@ network_configs:
   #   hp_dim: 64
   #   n_stage: 5
   pan_dim: 1
-  lms_dim: 102 #128
-  attn_dim: 256
+  lms_dim: 145 #102 #128
+  attn_dim: 64
   hp_dim: 64
-  n_stage: 8
+  n_stage: 5
   patch_merge: yes
   crop_batch_size: 32
   patch_size_list: [16,64,64]

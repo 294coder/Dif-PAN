@@ -31,8 +31,8 @@ def unref_for_loop(model,
                    **patch_merge_module_kwargs):
     bs = dl.batch_size
     all_sr = []
-    spa_size = tuple(dl.dataset.lms.shape[-2:])
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
+    # spa_size = tuple(dl.dataset.lms.shape[-2:])
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
     if split_patch:
         # assert bs == 1, 'batch size should be 1'
         model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
@@ -42,6 +42,7 @@ def unref_for_loop(model,
         if split_patch:
             pan_nc = pan.size(1)
             ms_nc = ms.size(1)
+            spa_size = pan.shape[-2:]
             input = (
                 F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
                 lms,
@@ -73,7 +74,7 @@ def ref_for_loop(model,
                  **patch_merge_module_kwargs):
     analysis = AnalysisPanAcc(ergas_ratio)
     all_sr = []
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=math.floor(dl.dataset.__len__() / dl.batch_size))
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
     if split_patch:
         # assert bs == 1, 'batch size should be 1'

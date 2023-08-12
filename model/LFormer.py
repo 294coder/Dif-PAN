@@ -81,7 +81,7 @@ class ReflashValue(nn.Module):
 
 
 class ReflashAttn(nn.Module):
-    def __init__(self, nhead=8, ksize=5):
+    def __init__(self, nhead=8, ksize=3):
         super().__init__()
         self.body = nn.Sequential(
             nn.Conv2d(nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False),
@@ -352,9 +352,9 @@ if __name__ == "__main__":
 
     ms = torch.randn(1, 8, 16, 16).cuda(1) 
     lms = torch.randn(1, 8, 64, 64).cuda(1)
-    pan = torch.randn(1, 1, 64, 64).cuda(1)
+    pan = torch.randn(1, 3, 64, 64).cuda(1)
 
-    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5,
+    net = AttnFuseMain(pan_dim=3, lms_dim=8, attn_dim=32, hp_dim=32, n_stage=5,
                        patch_merge=True, patch_size_list=[16,64,64], scale=4,
                        crop_batch_size=32).cuda(1)
     net.forward = partial(_only_for_flops_count_forward, net)

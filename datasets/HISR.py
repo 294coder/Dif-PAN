@@ -78,11 +78,11 @@ class HISRDataSets(data.Dataset):
             else Indentity()
         )
 
-    def _split_parts(self, file, normalize=False, load_all=True, rgb_to_bgr=False):
+    def _split_parts(self, file, normalize=False, load_all=True, rgb_to_bgr=False, keys=None):
         # has already been normalized
         
-        # keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
-        keys = ['GT', 'MS', 'PAN', 'LMS']
+        keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
+        # keys = ['GT', 'MS', 'PAN', 'LMS']
         
         if load_all:
             # load all data in memory

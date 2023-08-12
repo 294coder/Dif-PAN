@@ -21,15 +21,16 @@ from utils import (
     unref_for_loop,
     ref_for_loop,
     config_py_load,
+    h5py_to_dict
 )
 from utils.visualize import invert_normalized
 
 device = "cuda:1"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "gf"
+dataset_type = "cave"
 save_format = "mat"
-full_res = True
+full_res = False
 split_patch = False
 patch_size = 128
 ergas_ratio = 4
@@ -50,8 +51,8 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "dcformer"
-subarch = "mwsa_new"
+name = "hyper_transformer"
+subarch = ""
 dl_bs = 1
 crop_bs = 2
 
@@ -119,6 +120,8 @@ print("=" * 50)
 
 # p = './weight/lformer_29sq5or9.pth'  # lformer
 
+p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
+
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
 # p = "./weight/dcformer_3n8ejb6g.pth"  # 16->96
@@ -147,10 +150,19 @@ print("=" * 50)
 
 
 # Pavia
-p = './weight/lformer_3iybu4er.pth'  # lformer
+# p = './weight/lformer_3iybu4er.pth'  # lformer
+
+# p = './weight/gppnn_cvpr_wxx1bqnx.pth'  # gppnn
+
+# p = './weight/hyper_transformer_2ue24ofh.pth'  # hypertransformer
 
 
 # bostwana
+# p = './weight/lformer_2p6l11bk.pth'  # lformer
+
+# p = './weight/hyper_transformer_3c4cqp99.pth'  # hypertransformer
+
+# p = './weight/gppnn_cvpr_1zl5ahml.pth'  # gppnn
 
 
 
@@ -164,7 +176,7 @@ p = './weight/lformer_3iybu4er.pth'  # lformer
 # p = './weight/dcformer_3b0qmez5/ep_90.pth'  # dcformer_mwsa (r)
 
 # p = './weight/dcformer_36tmqq1p.pth'  # dcformer_mwsa new wx retrain
-p = './weight/dcformer_36tmqq1p.pth'
+# p = './weight/dcformer_36tmqq1p.pth'
 
 # p = './weight/dcfnet_2k1xjqom.pth'  # dcfnet
 
@@ -230,13 +242,19 @@ if dataset_type == "wv3":
         # path = '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'  # old test set
         path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
 elif dataset_type == "cave":
-    path = "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+    path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 elif dataset_type == "cave_x8":
     path = "/home/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 elif dataset_type == "harvard":
     path = "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
 elif dataset_type == "harvard_x8":
     path = "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+elif dataset_type == 'chikusei':
+    path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/test_Chikusei.h5"
+elif dataset_type == "pavia":
+    path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+elif dataset_type == 'botswana':
+    path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
 elif dataset_type == "gf":
     if not full_res:
         path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
@@ -289,8 +307,9 @@ model.eval()
 if dataset_type in ["wv3", "qb", "wv2"]:
     d = h5py.File(path)
     ds = WV3Datasets(d, hp=False, full_res=full_res)
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8"]:
+elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "chikusei", "pavia", "botswana"]:
     d = h5py.File(path)
+    d = h5py_to_dict(d)
     ds = HISRDataSets(d, rgb_to_bgr=False)
 elif dataset_type == "gf":
     d = h5py.File(path)
@@ -315,7 +334,7 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     const = 2047.0
 elif dataset_type in ["gf"]:
     const = 1023.0
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", 'roadscene', 'tno']:
+elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", 'chikusei', 'pavia', 'botswana', 'roadscene', 'tno']:
     const = 1.0
 else:
     raise NotImplementedError
@@ -330,11 +349,11 @@ except:
 if save_mat:
     _ref_or_not_s = "unref" if full_res else "ref"
     _patch_size_s = f"_p{patch_size}" if split_patch else ""
-    if dataset_type not in ["cave", "harvard", "cave_x8", "harvard_x8"]:  # wv3, qb, gf
+    if dataset_type not in ["cave", "harvard", "cave_x8", "harvard_x8", "chikusei", "pavia", "botswana"]:  # wv3, qb, gf
         d["ms"] = np.asarray(ds.ms[:]) * const
         d["lms"] = np.asarray(ds.lms[:]) * const
         d["pan"] = np.asarray(ds.pan[:]) * const
-    else:
+    elif full_res:
         d["ms"] = np.asarray(ds.lr_hsi[:]) * const
         d["lms"] = np.asarray(ds.hsi_up[:]) * const
         d["pan"] = np.asarray(ds.rgb[:]) * const

@@ -439,8 +439,8 @@ class ScaledDotProductAttention(nn.Module):
         return output
 
 
-class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module for Hyperspectral Pansharpening (Image Fusion) '''
+class MultiHeadAttention(nn.Module):
 
     def __init__(self, n_head, in_pixels, linear_dim, num_features):
         super().__init__()
@@ -522,10 +522,10 @@ class HyperTransformer(BaseModel):
         super(HyperTransformer, self).__init__()
         # Settings
         self.is_DHP_MS      = False #config["is_DHP_MS"]
-        self.in_channels    = 102 #128 #config[config["train_dataset"]]["spectral_bands"]
-        self.out_channels   = 102 #128 #config[config["train_dataset"]]["spectral_bands"]
+        self.in_channels    = 31 #145 #128 #config[config["train_dataset"]]["spectral_bands"]
+        self.out_channels   = 31 #145 #128 #config[config["train_dataset"]]["spectral_bands"]
         self.factor         = 4 #config[config["train_dataset"]]["factor"]
-        self.pan_dim        = 1
+        self.pan_dim        = 3
 
         self.num_res_blocks = [16, 1, 1, 1, 4]
         self.n_feats        = 256
@@ -539,7 +539,7 @@ class HyperTransformer(BaseModel):
         lv3_dim      = 4*16**2  #(4*config[config["train_dataset"]]["LR_size"])**2
 
         # Number of Heads in Multi-Head Attention Module
-        n_head          = 4 #config["N_modules"]
+        n_head          = 0 #config["N_modules"]
         
         # Setting up Multi-Head Attention or Single-Head Attention
         if n_head == 0:
@@ -963,24 +963,25 @@ if __name__ == '__main__':
     
     net = HyperTransformer().cuda()
 
-    ms = torch.randn(1, 102, 16, 16).cuda()
-    lms = torch.randn(1, 102, 16, 16).cuda()
-    pan = torch.randn(1, 1, 64, 64).cuda()
-    gt = torch.randn(1, 102, 64, 64).cuda()
+    ms = torch.randn(1, 31, 16, 16).cuda()
+    lms = torch.randn(1, 31, 16, 16).cuda()
+    pan = torch.randn(1, 3, 64, 64).cuda()
+    gt = torch.randn(1, 31, 64, 64).cuda()
     
     # print(net(ms,pan)['pred'].shape)
     
     # print(net.val_step(ms, lms, pan).shape)
-    sr = net._forward_implem(ms, pan)
-    loss = nn.MSELoss()(sr, gt)
-    loss.backward()
+    # sr = net._forward_implem(ms, pan)
+    # loss = nn.MSELoss()(sr, gt)
+    # loss.backward()
     
-    print(memory_summary())
+    # print(memory_summary())
     
     # out = net(ms,pan)
     # for k,v in out.items():
     #     print(k,v.shape)
     
-    # print(
-    #     flop_count_table(FlopCountAnalysis(net, (ms, pan)))
-    # )
+    net.forward = net._forward_implem
+    print(
+        flop_count_table(FlopCountAnalysis(net, (ms, pan)))
+    )

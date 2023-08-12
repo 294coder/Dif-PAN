@@ -467,8 +467,9 @@ def summaries(model, grad=False):
 
 
 if __name__ == '__main__':
-    from torch.cuda import memory_allocated, memory_reserved
-    model = MMNet().cuda()
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
+    
+    model = MMNet(num_channels=4).cuda()
     # ms = torch.randn((1, 8, 16, 16)).cuda()
     # lms = torch.randn((1, 8, 64, 64)).cuda()
     # pan = torch.randn((1, 1, 64, 64)).cuda()
@@ -477,12 +478,17 @@ if __name__ == '__main__':
     lms = torch.randn((1, 4, 256, 256)).cuda()
     pan = torch.randn((1, 1, 256, 256)).cuda()
     
-    gt = torch.randn((1, 4, 256, 256)).cuda()
-    sr, loss = model.train_step(ms, lms, pan, gt, F.l1_loss)
-    loss.backward()
+    # gt = torch.randn((1, 4, 256, 256)).cuda()
+    # sr, loss = model.train_step(ms, lms, pan, gt, F.l1_loss)
+    # loss.backward()
     
     # print memory usage in GB
-    print('Allocated:', round(memory_reserved(0)/1024**3, 1), 'GB')
+    # print('Allocated:', round(memory_reserved(0)/1024**3, 1), 'GB')
+    
+    model.forward = model._forward_implem
+    print(
+        flop_count_table(FlopCountAnalysis(model, (ms, lms, pan)))
+    )
     
     # summaries(model, grad=True)
     
