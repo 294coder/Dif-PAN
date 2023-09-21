@@ -13,7 +13,7 @@ from model.module.attention import MultiScaleWindowCrossAttention
 from model.module.layer_norm import LayerNorm, normalization
 from model.panformer import PanFormerEncoderLayer
 
-PLANES = 1
+PLANES = 31
 
 ################ MODULES #####################
 
@@ -1486,8 +1486,8 @@ class DCFormerMWSA(BaseModel):
         )
         sr = self._forward_implem(pan, lms, mms, ms)
         if self.residual:
-            # sr = sr + lms
-            sr = sr + (lms + pan) / 2
+            sr = sr + lms
+            # sr = sr + (lms + pan) / 2
         loss = criterion(sr, gt)
 
         return sr, loss
@@ -1540,8 +1540,8 @@ class DCFormerMWSA(BaseModel):
             self._set_window_dict(self.window_dict)
 
         if self.residual:
-            # sr = sr + lms
-            sr = sr + (lms + pan) / 2
+            sr = sr + lms
+            # sr = sr + (lms + pan) / 2
         return sr
 
     def patch_merge_step(self, ms, mms, lms, pan, **kwargs):

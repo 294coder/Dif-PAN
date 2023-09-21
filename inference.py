@@ -27,12 +27,12 @@ from utils.visualize import invert_normalized
 device = "cuda:0"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "harvard"
+dataset_type = "gf5"
 save_format = "mat"
 full_res = False
 split_patch = False
 patch_size = 1000
-ergas_ratio = 4
+ergas_ratio = 2
 patch_size_list = [
     patch_size // ergas_ratio,
     patch_size // 2,
@@ -43,7 +43,7 @@ save_mat = True
 loop_func = (
     partial(
         ref_for_loop,
-        hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8"],
+        hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8", "gf5"],
         patch_size_list=patch_size_list,
         ergas_ratio=ergas_ratio,
         residual_exaggerate_ratio=5000,
@@ -51,13 +51,13 @@ loop_func = (
     if not full_res
     else partial(
         unref_for_loop,
-        hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8"],
+        hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8", "gf5"],
         patch_size_list=patch_size_list,
     )
 )
-name = "dcformer"
-subarch = "mwsa_new"
-dl_bs = 1
+name = "hsrnet"
+subarch = ""
+dl_bs = 6
 crop_bs = 2
 
 
@@ -114,7 +114,7 @@ print("=" * 50)
 # p = "./weight/dcformer_1dpmi7w6/ep_30.pth"  # dcformer_mwsa PSNR: 51.39 (r)
 
 # p = "./weight/dcformer_cave_x4.pth"  # dcformer new arch wx
-p = './weight/dcformer_7u5y5qpi.pth'  # dcformer 8 CAttn
+# p = './weight/dcformer_7u5y5qpi.pth'  # dcformer 8 CAttn
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
@@ -145,6 +145,9 @@ p = './weight/dcformer_7u5y5qpi.pth'  # dcformer 8 CAttn
 # p = './weight/dcformer_3pexzxle.pth'  # dcformer new arch wx c_attn legacy low psnr
 # p = './weight/dcformer_3esy9p4b.pth'  # dcformer 8 CAttn
 # =================================================
+
+# ============== GF5-GF1 ==========================
+p = './weight/hsrnet_mvqqs7jp.pth'
 
 # ===============GF checkpoint=====================
 # p = './weight/dcformer_2a8g853d.pth'  # dcformer
@@ -231,9 +234,12 @@ elif dataset_type == "cave":
 elif dataset_type == "cave_x8":
     path = "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 elif dataset_type == "harvard":
-    path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+    # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+    path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"    
 elif dataset_type == "harvard_x8":
     path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+elif dataset_type == "gf5":
+    path = "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
 elif dataset_type == "gf":
     if not full_res:
         path = "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
@@ -285,7 +291,7 @@ model.eval()
 if dataset_type in ["wv3", "qb", "wv2"]:
     d = h5py.File(path)
     ds = WV3Datasets(d, hp=False, full_res=full_res)
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8"]:
+elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:
     d = h5py.File(path)
     ds = HISRDataSets(d)
 elif dataset_type == "gf":
@@ -311,7 +317,7 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     const = 2047.0
 elif dataset_type in ["gf"]:
     const = 1023.0
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "roadscene", "tno"]:
+elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "roadscene", "tno", "gf5"]:
     const = 1.0
 else:
     raise NotImplementedError
@@ -326,7 +332,7 @@ except:
 if save_mat:
     _ref_or_not_s = "unref" if full_res else "ref"
     _patch_size_s = f"_p{patch_size}" if split_patch else ""
-    if dataset_type not in ["cave", "harvard", "cave_x8", "harvard_x8"]:  # wv3, qb, gf
+    if dataset_type not in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:  # wv3, qb, gf
         d["ms"] = np.asarray(ds.ms[:]) * const
         d["lms"] = np.asarray(ds.lms[:]) * const
         d["pan"] = np.asarray(ds.pan[:]) * const

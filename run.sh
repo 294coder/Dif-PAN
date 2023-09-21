@@ -32,18 +32,19 @@
 #  --logger_on
 
 ## pannet arch
-#  python main.py --proj_name pannet --arch pannet \
-#  -b 60 --device 'cuda:0' --dataset 'qb' \
-#  --warm_up_epochs 0 --num_worker 0 -e 600 --aug_probs 0. 0. \
-#  --loss mse --val_n_epoch 10 --comment 'pannet qb' \
-#  --logger_on
+ python main.py --proj_name restfnet --arch restfnet \
+ -b 32 --device 'cuda:0' --dataset 'hisi' \
+ --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+ --loss l1ssim --val_n_epoch 10 --comment 'restfnet gf5' \
+ --logger_on --log_metrics \
+ --pretrain --pretrain_id 'a5zmv8v9' --non_load_strict
 
 ## dcformer arch
-python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \
--b 64 --device 'cuda:1' --dataset 'wv3' --logger_on --log_metrics \
---warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
---loss 'l1ssim' --val_n_epoch 10 --comment '根据wx的新代码进行 wv3 的训练' \
---ergas_ratio 4 \
+# python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \
+# -b 52 --device 'cuda:1' --dataset 'qb' --logger_on --log_metrics \
+# --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
+# --loss 'l1ssim' --val_n_epoch 10 --comment '根据wx的新代码进行 qb 的训练' \
+# --ergas_ratio 4 \
 #--pretrain --pretrain_id '1yb9gy7x' --non_load_strict
 #  --save_every_eval
 

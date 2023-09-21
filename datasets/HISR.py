@@ -1,6 +1,7 @@
 import random
 import time
 from typing import Union
+import cv2
 
 import h5py
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from utils import Identity
 class HISRDataSets(data.Dataset):
     # FIXME: when use this Dataset, you should set num_works to 0 or it will raise unpickable error
     def __init__(
-            self, file: Union[h5py.File, str, dict], normalize=False, aug_prob=0.0
+        self, file: Union[h5py.File, str, dict], normalize=False, aug_prob=0.0, hp=False
     ):
         super(HISRDataSets, self).__init__()
         # warning: you should not save file (h5py.File) in this class,
@@ -27,7 +28,18 @@ class HISRDataSets(data.Dataset):
                 "warning: when @file is a h5py.File object, it can not be pickled.",
                 "try to set DataLoader number_worker to 0",
             )
-        self.gt, self.lr_hsi, self.rgb, self.hsi_up = self._split_parts(file, normalize)
+
+        _norm_factor = 1.0 if not normalize else 2047.0
+        self.gt, self.lr_hsi, self.rgb, self.hsi_up = self._split_parts(
+            file, _norm_factor
+        )
+
+        if hp:
+            self._hp_kernel = torch.ones(
+                (5, 5),
+                dtype=torch.float32,
+            ).view(1, 1, 5, 5)
+            self.group_high_pass()
 
         # NOTE: bgr -> rgb
         # self.rgb = self.rgb[:, [2, 1, 0]]
@@ -76,24 +88,35 @@ class HISRDataSets(data.Dataset):
             else Identity()
         )
 
-    def _split_parts(self, file, normalize=False, load_all=True):
+    def _get_high_pass(self, data):
+        self._hp_kernel: torch.Tensor
+
+        c = data.size(1)  # data[:4, [29,19,9]], hp_d[:4, [29,19,9]] # data[:4], hp_d[:4]
+        hp_d = torch.conv2d(
+            data,
+            weight=self._hp_kernel.repeat_interleave(c, dim=0),
+            groups=c,
+            stride=1,
+            padding=self._hp_kernel.size(-1) // 2,
+        )
+        data = data - hp_d
+        return data
+
+    def group_high_pass(self):
+        self.lr_hsi = self._get_high_pass(self.lr_hsi)
+        self.hsi_up = self._get_high_pass(self.hsi_up)
+        self.rgb = self._get_high_pass(self.rgb)
+
+    def _split_parts(self, file, normalize_factor=1.0, load_all=True):
         # has already been normalized
         if load_all:
             # load all data in memory
-            if normalize:
-                return (
-                    torch.tensor(file["GT"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["LRHSI"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["RGB"][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file["HSI_up"][:], dtype=torch.float32) / 2047.0,
-                )
-            else:
-                return (
-                    torch.tensor(file["GT"][:], dtype=torch.float32),
-                    torch.tensor(file["LRHSI"][:], dtype=torch.float32),
-                    torch.tensor(file["RGB"][:], dtype=torch.float32),
-                    torch.tensor(file["HSI_up"][:], dtype=torch.float32),
-                )
+            return (
+                torch.tensor(file["GT"][:], dtype=torch.float32) / normalize_factor,
+                torch.tensor(file["LRHSI"][:], dtype=torch.float32) / normalize_factor,
+                torch.tensor(file["RGB"][:], dtype=torch.float32) / normalize_factor,
+                torch.tensor(file["HSI_up"][:], dtype=torch.float32) / normalize_factor,
+            )
         else:
             # warning: it will ignore @normalize
             return (
@@ -137,9 +160,9 @@ class HISRDataSets(data.Dataset):
 
 
 if __name__ == "__main__":
-    path = r"/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
+    path = r"/Data2/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5"
     file = h5py.File(path)
-    dataset = HISRDataSets(file, aug_prob=0.9)
+    dataset = HISRDataSets(file, aug_prob=0.0, hp=True)
     dl = data.DataLoader(
         dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True
     )

@@ -982,7 +982,7 @@ class CDDFusionLoss(nn.Module):
 
 def get_loss(loss_type, channel=31):
     if loss_type == "mse":
-        criterion = nn.MSELoss()
+        criterion = TorchLossWrapper((1., ), mse=nn.MSELoss())  # nn.MSELoss()
     elif loss_type == "l1":
         criterion = TorchLossWrapper((1.,), l1=nn.L1Loss())
     elif loss_type == "hybrid":

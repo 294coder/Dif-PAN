@@ -56,6 +56,9 @@ def get_args():
             "cssnet",
             "gppnn",
             "pmacnet",
+            "ssrnet",
+            "hsrnet",
+            "restfnet",
         ],
     )
     parser.add_argument(
@@ -89,7 +92,7 @@ def get_args():
             "u2fusion",
             "swinfusion",
             "none",
-            "None"
+            "None",
         ],
     )
     parser.add_argument("--grad_accum_ep", type=int, default=None)
@@ -210,7 +213,7 @@ def main(local_rank, args):
     args.optimizer.lr *= lr_adjust_ratio
     optim = get_optimizer(network.parameters(), **args.optimizer.to_dict())
     lr_scheduler = get_scheduler(optim, **args.lr_scheduler.to_dict())
-    criterion = get_loss(args.loss, network_configs.get('spectral_num', 4)).cuda()
+    criterion = get_loss(args.loss, network_configs.get("spectral_num", 4)).cuda()
 
     # load params
     # assert not (args.load and args.resume == 'allow'), 'resume the network and wandb logger'
@@ -269,6 +272,7 @@ def main(local_rank, args):
         )
     else:
         from utils import NoneLogger
+
         logger = NoneLogger()
 
     # get datasets and dataloader
@@ -310,8 +314,8 @@ def main(local_rank, args):
                     h5py_to_dict(h5_train, keys),
                     h5py_to_dict(h5_val, keys),
                 )
-                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0])
-                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1])
+                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0], hp=args.hp)
+                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1], hp=args.hp)
             elif args.dataset == "gf":
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (

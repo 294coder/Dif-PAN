@@ -1,18 +1,19 @@
 # Copyright (c) ZiHan Cao, LJ Deng (UESTC-MMHCISP). All Rights Reserved.
 from functools import partial
+from typing import Optional, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import optim
 
 from model.base_model import BaseModel, PatchMergeModule, register_model
 from model.module.attention import MultiScaleWindowCrossAttention
 from model.module.layer_norm import LayerNorm, normalization
 from model.panformer import PanFormerEncoderLayer
 
-PLANES = 31
-
+PLANES = 8
 
 ################ MODULES #####################
 
@@ -129,17 +130,17 @@ class BasicBlock2(nn.Module):
     expansion = 1
 
     def __init__(
-            self,
-            inplanes,
-            planes,
-            num_heads,
-            spatial_size,
-            mlp_ratio=2,
-            norm_type="bn",
-            attn_drop=0.0,
-            mlp_drop=0.0,
-            drop_path=0.0,
-            downsample=None,
+        self,
+        inplanes,
+        planes,
+        num_heads,
+        spatial_size,
+        mlp_ratio=2,
+        norm_type="bn",
+        attn_drop=0.0,
+        mlp_drop=0.0,
+        drop_path=0.0,
+        downsample=None,
     ):
         super(BasicBlock2, self).__init__()
         self.block = PanFormerEncoderLayer(
@@ -204,7 +205,7 @@ class Bottleneck(nn.Module):
     expansion = 4
 
     def __init__(
-            self, inplanes, planes, spatial_size, stride=1, downsample=None, norm_type="bn"
+        self, inplanes, planes, spatial_size, stride=1, downsample=None, norm_type="bn"
     ):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
@@ -257,12 +258,15 @@ class ChannelFuseBlock(nn.Module):
     expansion = 1
 
     def __init__(
-            self,
-            inplanes,
-            planes,
-            spatial_size,
-            num_heads=8,
-            norm_type="bn",
+        self,
+        inplanes,
+        planes,
+        spatial_size,
+        num_res=1,
+        stride=1,
+        downsample=None,
+        num_heads=8,
+        norm_type="bn",
     ):
         super(ChannelFuseBlock, self).__init__()
         # self.conv_up = conv3x3(31, planes, stride)  # prefusion
@@ -271,21 +275,23 @@ class ChannelFuseBlock(nn.Module):
         self.relu = nn.LeakyReLU(
             0.2,
         )
-        self.res_block = BasicBlock2(
-            planes,
-            planes,
-            num_heads=num_heads,
-            norm_type=norm_type,
-            spatial_size=spatial_size,
-        )
+        # PanNetUnit类似于U^2 net necked U-net
+        self.res_block = nn.ModuleList([])
+        for i in range(num_res):
+            # self.res_block.append(BasicBlock(planes, planes, stride, downsample))
+            self.res_block.append(
+                BasicBlock2(
+                    planes,
+                    planes,
+                    num_heads=num_heads,
+                    norm_type=norm_type,
+                    spatial_size=spatial_size,
+                )
+            )
 
     def forward(self, x, y):
         # Pan + Ms 1,8,H,W + 1,8,H,W
         # x, y = inputs[0], inputs[1]
-
-        # x-> z
-        # y-> x
-        # RGB
 
         rs_w = self.relu(self.rs_w)
         weight = rs_w / (torch.sum(rs_w, dim=0) + self.epsilon)
@@ -294,7 +300,11 @@ class ChannelFuseBlock(nn.Module):
 
         out = weight[0] * x + weight[1] * y
         out = self.relu(out)
-        out_rs = self.res_block(out)
+        for res_conv in self.res_block:
+            out_rs = res_conv(out)  # CAttn
+
+        if len(self.res_block) != 1:
+            out_rs = out + out_rs
 
         return out_rs
 
@@ -307,23 +317,24 @@ class HighResolutionModule(nn.Module):
     """
 
     def __init__(
-            self,
-            num_branches,
-            blocks,
-            num_blocks,
-            num_inchannels,
-            num_channels_pre_layer,
-            num_channels_cur_layer,
-            num_channels,
-            num_heads,
-            mlp_ratio,
-            norm_type,
-            attn_drop,
-            drop_path,
-            mlp_drop,
-            fuse_method,
-            spatial_size,
-            multi_scale_output=True,
+        self,
+        num_branches,
+        blocks,
+        num_blocks,
+        num_inchannels,
+        num_channels_pre_layer,
+        num_channels_cur_layer,
+        num_channels,
+        num_heads,
+        mlp_ratio,
+        norm_type,
+        attn_drop,
+        drop_path,
+        mlp_drop,
+        fuse_method,
+        spatial_size,
+        multi_scale_output=True,
+        last_stage=False,
     ):
         super(HighResolutionModule, self).__init__()
         self._check_branches(
@@ -352,7 +363,9 @@ class HighResolutionModule(nn.Module):
         self.fuse_layers = self._make_fuse_layers(
             spatial_size, num_heads, mlp_ratio, attn_drop, drop_path
         )  # Stage 的 1和2的CA
-        if num_branches == 2:
+        # if num_branches == 2:
+        self.last_stage = last_stage
+        if not self.last_stage: #num_branches == 2:
             self.transition_layers = self._our_make_transition_layer(
                 num_channels_pre_layer,
                 num_channels_cur_layer,
@@ -373,7 +386,7 @@ class HighResolutionModule(nn.Module):
         self.fcc_relu = nn.LeakyReLU(0.2)
 
     def _check_branches(
-            self, num_branches, blocks, num_blocks, num_inchannels, num_channels
+        self, num_branches, blocks, num_blocks, num_inchannels, num_channels
     ):
         if num_branches != len(num_blocks):
             error_msg = "NUM_BRANCHES({}) <> NUM_BLOCKS({})".format(
@@ -398,24 +411,24 @@ class HighResolutionModule(nn.Module):
 
     # 构建具体的某一分支网络
     def _make_one_branch(
-            self,
-            branch_index,
-            block,
-            num_blocks,
-            num_channels,
-            spatial_size,
-            num_heads,
-            mlp_ratio,
-            norm_type,
-            attn_drop,
-            drop_path,
-            mlp_drop,
-            stride=1,
+        self,
+        branch_index,
+        block,
+        num_blocks,
+        num_channels,
+        spatial_size,
+        num_heads,
+        mlp_ratio,
+        norm_type,
+        attn_drop,
+        drop_path,
+        mlp_drop,
+        stride=1,
     ):
         layers = []
         # 加深卷积层，仅第一层牵涉到下采样
         self.num_inchannels[branch_index] = num_channels[branch_index] * block.expansion
-        for _ in range(0, num_blocks[branch_index]):
+        for i in range(0, num_blocks[branch_index]):
             layers.append(
                 block(
                     self.num_inchannels[branch_index],
@@ -434,18 +447,18 @@ class HighResolutionModule(nn.Module):
 
     # 用于构建分支
     def _make_branches(
-            self,
-            num_branches,
-            block,
-            num_blocks,
-            num_channels,
-            spatial_size,
-            num_heads,
-            mlp_ratio,
-            norm_type,
-            attn_drop,
-            drop_path,
-            mlp_drop,
+        self,
+        num_branches,
+        block,
+        num_blocks,
+        num_channels,
+        spatial_size,
+        num_heads,
+        mlp_ratio,
+        norm_type,
+        attn_drop,
+        drop_path,
+        mlp_drop,
     ):
         branches = []
 
@@ -469,15 +482,15 @@ class HighResolutionModule(nn.Module):
         return nn.ModuleList(branches)
 
     def _our_make_transition_layer(
-            self,
-            num_channels_pre_layer,
-            num_channels_cur_layer,
-            spatial_size,
-            num_heads,
-            mlp_ratio,
-            norm_type,
-            attn_drop,
-            drop_path,
+        self,
+        num_channels_pre_layer,
+        num_channels_cur_layer,
+        spatial_size,
+        num_heads,
+        mlp_ratio,
+        norm_type,
+        attn_drop,
+        drop_path,
     ):
         num_branches_cur = len(num_channels_cur_layer)  # 2,3,4,4
         num_branches_pre = len(num_channels_pre_layer)  # 1,2,3,4
@@ -528,6 +541,9 @@ class HighResolutionModule(nn.Module):
                                 norm_type=norm_type,
                                 attn_drop=attn_drop,
                                 drop_path=drop_path,
+                                kernel_size=3,
+                                stride=2,
+                                padding=1,
                             )
                         )
                     )
@@ -537,13 +553,13 @@ class HighResolutionModule(nn.Module):
         return nn.ModuleList(transition_layers)
 
     def _make_fuse_layers(
-            self,
-            spatial_size,
-            num_heads,
-            mlp_ratio,
-            norm_type,
-            attn_drop=0.2,
-            drop_path=0.2,
+        self,
+        spatial_size,
+        num_heads,
+        mlp_ratio,
+        norm_type,
+        attn_drop=0.2,
+        drop_path=0.2,
     ):
         if self.num_branches == 1:
             return None
@@ -554,54 +570,55 @@ class HighResolutionModule(nn.Module):
         for i in range(num_branches if self.multi_scale_output else 1):
             fuse_layer = []
             for j in range(num_branches):
-                if j > i:
+                # if j > i:
+                #     fuse_layer.append(
+                #         PanFormerEncoderLayer(
+                #             (num_inchannels[i], num_inchannels[j]),
+                #             num_heads[i],
+                #             mlp_ratio=mlp_ratio[i],
+                #             attn_type="M",
+                #             norm_type=norm_type,
+                #             attn_drop=attn_drop,
+                #             drop_path=drop_path,
+                #             norm_layer=partial(
+                #                 normalization, "ln", spatial_size=spatial_size
+                #             ),
+                #         )
+                #     )
+                # elif j == i:
+                if i == j:
+                    fuse_layer.append(None)
+                else:
+                    # if num_branches == 2:
                     fuse_layer.append(
                         PanFormerEncoderLayer(
                             (num_inchannels[i], num_inchannels[j]),
                             num_heads[i],
-                            mlp_ratio=mlp_ratio[i],
-                            attn_type="M",
                             norm_type=norm_type,
                             attn_drop=attn_drop,
+                            mlp_ratio=mlp_ratio[i],
+                            attn_type="M",
                             drop_path=drop_path,
                             norm_layer=partial(
                                 normalization, "ln", spatial_size=spatial_size
                             ),
                         )
                     )
-                elif j == i:
-                    fuse_layer.append(None)
-                else:
-                    if num_branches == 2:
-                        fuse_layer.append(
-                            PanFormerEncoderLayer(
-                                (num_inchannels[i], num_inchannels[j]),
-                                num_heads[i],
-                                norm_type=norm_type,
-                                attn_drop=attn_drop,
-                                mlp_ratio=mlp_ratio[i],
-                                attn_type="M",
-                                drop_path=drop_path,
-                                norm_layer=partial(
-                                    normalization, "ln", spatial_size=spatial_size
-                                ),
-                            )
-                        )
-                    elif num_branches == 3:
-                        fuse_layer.append(
-                            PanFormerEncoderLayer(
-                                (num_inchannels[i], num_inchannels[j]),
-                                num_heads[i],
-                                norm_type,
-                                attn_drop,
-                                mlp_ratio[i],
-                                attn_type="M",
-                                drop_path=drop_path,
-                                norm_layer=partial(
-                                    normalization, "ln", spatial_size=spatial_size
-                                ),
-                            )
-                        )
+                    # elif num_branches == 3:
+                    #     fuse_layer.append(
+                    #         PanFormerEncoderLayer(
+                    #             (num_inchannels[i], num_inchannels[j]),
+                    #             num_heads[i],
+                    #             norm_type,
+                    #             attn_drop,
+                    #             mlp_ratio[i],
+                    #             attn_type="M",
+                    #             drop_path=drop_path,
+                    #             norm_layer=partial(
+                    #                 normalization, "ln", spatial_size=spatial_size
+                    #             ),
+                    #         )
+                    #     )
             fuse_layers.append(nn.ModuleList(fuse_layer))
 
         return nn.ModuleList(fuse_layers)
@@ -610,51 +627,60 @@ class HighResolutionModule(nn.Module):
         return self.num_inchannels
 
     def forward(self, inputs):
+        # stage 2: @y shape [1,8,16,16], @x [[1,32,64,64],[1,56,32,32]]
         x, y = inputs[0], inputs[1]
 
         num_branches = self.num_branches
-        fcc_w = self.fcc_relu(self.fcc_w)
+        # print("num_branches:", num_branches)
+        fcc_w = self.fcc_relu(self.fcc_w)  #  shape: [n_branch, n_branch]
         weight = fcc_w / (torch.sum(fcc_w, dim=0) + self.epsilon)
 
-        if num_branches == 1:
-            return [self.branches[0](x[0])]
+        # if num_branches == 1:
+        #     return [self.branches[0](x[0])]
 
-        # BasicBlocks
+        # BasicBlocks CAttn
         for i in range(self.num_branches):
             x[i] = self.branches[i](x[i])
 
         #################################################################################
-        if num_branches == 2:
-            x_new_branch = self.transition_layers[num_branches]((*x, y))
+        if not self.last_stage:
+            x_new_branch = self.transition_layers[num_branches]((*x, y))  # new branch (LR) shape: [1, 72, 16, 16]
 
+        """
+        PCFT:  torch.Size([1, 32, 64, 64]) torch.Size([1, 64, 32, 32])
+        PCFT:  torch.Size([1, 64, 32, 32]) torch.Size([1, 32, 64, 64])
+        """
         # stage2的上采样PCFT
         # print("up fusion")
         x_fuse = []
+        print(weight.shape)
         for i in range(len(self.fuse_layers)):
-            # i>0, 0
-            if num_branches == 2:
-                y = x[0] if i == 0 else self.fuse_layers[i][0](x[i], x[0])
-            elif num_branches == 3:
-                y = x[0] if i == 0 else self.fuse_layers[i][0](x[i], x[0])
-            for j in range(1, self.num_branches):
+            # y = x[0] if i == 0 else self.fuse_layers[i][0](x[i], x[0])  # input @y is substituted, from 0-th brach to i-th branch
+            y = x[i]
+            for j in range(self.num_branches):
+                print(i, j)
+                
                 weight_m = weight[i][0] if j == 1 else 1
                 if i == j:
-                    y = weight_m * y + weight[i][j] * x[j]
-                elif j > i:
-                    width_output = x[i].shape[-1]
-                    height_output = x[i].shape[-2]
-                    y = weight_m * y + weight[i][j] * F.interpolate(
-                        self.fuse_layers[i][j](x[i], x[j]),
-                        size=[height_output, width_output],
-                        mode="bilinear",
-                        align_corners=True,
-                    )  # 上采样已经不需要了，暂时保留
+                    y = weight_m * y + weight[i][j] * x[j]  # x[j] is CAttn(x[j])
+                # elif j > i:
+                    # width_output = x[i].shape[-1]
+                    # height_output = x[i].shape[-2]
+                    # y = weight_m * y + weight[i][j] * F.interpolate(
+                    #     self.fuse_layers[i][j](x[i], x[j]),
+                    #     size=[height_output, width_output],
+                    #     mode="bilinear",
+                    #     align_corners=True,
+                    # )  # 上采样已经不需要了，暂时保留
                 else:
-                    # stage3是全连接，在这里进行下采样
+                    # fuse different branches (from j-th branch to i-th branch)
                     y = weight_m * y + weight[i][j] * self.fuse_layers[i][j](x[i], x[j])
+                # else:
+                #     # fuse higher res branch to low res branch
+                #     y = weight_m * y + weight[i][j] * self.fuse_layers[i][j](x[i], x[j])
             x_fuse.append(self.relu(y))
 
-        if num_branches == 2:  # stage2的时候self.transition_layers的前2个是None,用于得到多输出
+        if not self.last_stage:  # stage2的时候self.transition_layers的前2个是None,用于得到多输出
             for i in range(num_branches):
                 if self.transition_layers[i] is not None:
                     if i < num_branches - 1:
@@ -666,37 +692,33 @@ class HighResolutionModule(nn.Module):
 
 class TransitionFPN(nn.Module):
     def __init__(
-            self,
-            num_branches_after_trans,
-            spatial_size,
-            inchannels,
-            outchannels,
-            num_heads=8,
-            mlp_ratio=2,
-            attn_drop=0.2,
-            drop_path=0.2,
-            norm_type="bn",
+        self,
+        num_branches_after_trans,
+        spatial_size,
+        inchannels=0,
+        outchannels=0,
+        num_heads=8,
+        mlp_ratio=2,
+        attn_drop=0.2,
+        drop_path=0.2,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        norm_type="bn",
     ):
-        # input channels: (8, (8, 12), (8, 12, 16))
-        # stage 2 @inchannels: 32
-        # stage 2 @outchannels: 12 (mms branch)
-
-        # stage 3 @inchannels: 12 (mms branch)
-        # stage 3 @outchannels: 16 (ms branch)
-
         super(TransitionFPN, self).__init__()
         planes = PLANES
         self.num_branches = num_branches_after_trans  # num_branches_cur=2,3
-        self.cfb_eps = 1e-4
 
         if self.num_branches == 2:
+            # inchannels = 64
             self.b0_in_down = nn.Sequential(
                 nn.Conv2d(inchannels, outchannels, 1, 1),  # 256
                 nn.Conv2d(outchannels, outchannels, 3, 2, 1, groups=outchannels),
+                # nn.BatchNorm2d(64),
                 normalization(norm_type, outchannels),
                 nn.LeakyReLU(0.2, inplace=True),
             )
-            # stage 2 in (mms)
             self.b2_in_up = nn.Sequential(
                 nn.Conv2d(planes, outchannels, 1, 1),
                 nn.Conv2d(
@@ -708,93 +730,93 @@ class TransitionFPN(nn.Module):
                     bias=False,
                 ),
             )
-
-            # extract CFB into TransitionFPN
             self.cfs_layers = ChannelFuseBlock(
-                outchannels,
-                outchannels,
-                spatial_size,
-                norm_type=norm_type,
-                num_heads=num_heads[-1]
-                if isinstance(num_heads, (list, tuple))
-                else num_heads,
+                outchannels, outchannels, spatial_size, norm_type=norm_type
             )
 
-            # CFB init
-            # self.cfb_rs_w = nn.Parameter(torch.ones(2, dtype=torch.float32), requires_grad=True)
-            # self.cfb_relu = nn.LeakyReLU(0.2)
-            # self.cfb_basic_block = BasicBlock2(
-            #     outchannels,
-            #     outchannels,
-            #     num_heads=num_heads[-1]
-            #     if isinstance(num_heads, (list, tuple))
-            #     else num_heads,
-            #     norm_type=norm_type,
-            #     spatial_size=spatial_size,
-            # )
+        # if self.num_branches == 3:
+        #     # inchannels = [32, 64, 128]
+        #     self.epsilon = 1e-4
+        #     self.b2_in_up = nn.Sequential(
+        #         nn.Conv2d(planes, inchannels[2], 1, 1),
+        #         nn.Conv2d(
+        #             inchannels[2],
+        #             inchannels[2],
+        #             kernel_size=3,
+        #             stride=1,
+        #             padding=1,
+        #             bias=False,
+        #         ),
+        #     )
+        #     self.fuse_block_b0_b1 = PanFormerEncoderLayer(
+        #         (inchannels[2], inchannels[0]),
+        #         num_heads=num_heads,
+        #         norm_type=norm_type,
+        #         attn_drop=attn_drop,
+        #         mlp_ratio=mlp_ratio,
+        #         attn_type="M",
+        #         drop_path=drop_path,  # (64, 32)->(32, 128)
+        #         norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
+        #     )
+        #     self.fuse_block_b1_b2 = PanFormerEncoderLayer(
+        #         (inchannels[2], inchannels[1]),
+        #         num_heads=num_heads,
+        #         norm_type=norm_type,
+        #         attn_drop=attn_drop,
+        #         mlp_ratio=mlp_ratio,
+        #         attn_type="M",
+        #         drop_path=drop_path,  # (128, 64)->(64, 128)
+        #         norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
+        #     )
+        #     self.cfs_layers = ChannelFuseBlock(
+        #         inchannels[2], inchannels[2], spatial_size, norm_type=norm_type
+        #     )
 
-        if self.num_branches == 3:
-            # inchannels = [32, 64, 128]
+        #     self.rs_w = nn.Parameter(
+        #         torch.ones(self.num_branches-1, dtype=torch.float32), requires_grad=True
+        #     )
+            
+            
+        else:
             self.epsilon = 1e-4
-
-            self.b2_in_up = nn.Sequential(
-                nn.Conv2d(planes, inchannels[2], 1, 1),
+            # define upscale channel for now res branch
+            self.bn_in_up = nn.Sequential(
+                nn.Conv2d(planes, inchannels[-1], 1, 1),
                 nn.Conv2d(
-                    inchannels[2],
-                    inchannels[2],
+                    inchannels[-1],
+                    inchannels[-1],
                     kernel_size=3,
                     stride=1,
                     padding=1,
                     bias=False,
                 ),
             )
-            self.fuse_block_b0_b1 = PanFormerEncoderLayer(
-                (inchannels[2], inchannels[0]),
-                num_heads=num_heads,
-                norm_type=norm_type,
-                attn_drop=attn_drop,
-                mlp_ratio=mlp_ratio,
-                attn_type="M",
-                drop_path=drop_path,  # (64, 32)->(32, 128)
-                norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
-            )
-            self.fuse_block_b1_b2 = PanFormerEncoderLayer(
-                (inchannels[2], inchannels[1]),
-                num_heads=num_heads,
-                norm_type=norm_type,
-                attn_drop=attn_drop,
-                mlp_ratio=mlp_ratio,
-                attn_type="M",
-                drop_path=drop_path,  # (128, 64)->(64, 128)
-                norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
-            )
+            # define other high res branches weights, num: num_branches-1
             self.rs_w = nn.Parameter(
-                torch.ones(2, dtype=torch.float32), requires_grad=True
+                torch.ones(self.num_branches-1, dtype=torch.float32), requires_grad=True
             )
             self.relu = nn.LeakyReLU(0.2)
-
-            # same as above
+            # define FCSA part by FC-Spa, num: num_branches-1
+            fused_in_c = inchannels[-1]
+            self.fuse_block_bi_bns = nn.ModuleList([])
+            for i in range(self.num_branches-1):
+                self.fuse_block_bi_bns.append(
+                    PanFormerEncoderLayer(
+                        (fused_in_c, inchannels[i]),
+                        num_heads=num_heads,
+                        norm_type=norm_type,
+                        attn_drop=attn_drop,
+                        mlp_ratio=mlp_ratio,
+                        attn_type="M",
+                        drop_path=drop_path,
+                        norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
+                    )   
+                )
+            # define fixed @ChannelFuseBlock
             self.cfs_layers = ChannelFuseBlock(
-                inchannels[2],
-                inchannels[2],
-                spatial_size,
-                norm_type=norm_type,
-                num_heads=num_heads[-1]
-                if isinstance(num_heads, (list, tuple))
-                else num_heads,
+                inchannels[-1], inchannels[-1], spatial_size, norm_type=norm_type
             )
-
-            # self.cfb_rs_w = nn.Parameter(torch.ones(2, dtype=torch.float32), requires_grad=True)
-            # self.cfb_relu = nn.LeakyReLU(0.2)
-            # self.cfb_basic_block = BasicBlock2(
-            #     inchannels[2],
-            #     inchannels[2],
-            #     num_heads=num_heads[-1]
-            #     if isinstance(num_heads, (list, tuple))
-            #     else num_heads,
-            #     norm_type=norm_type,
-            #     spatial_size=spatial_size,
-            # )
+            
 
     def forward(self, x):
         """
@@ -802,69 +824,91 @@ class TransitionFPN(nn.Module):
         :param y: 8x64x64 | 8x32x32 | 8x16x16
         :return:
         """
+        # x = x[0]
+        # out = self.conv3x3s(x)
         num_branches = self.num_branches
+        # out = x
+        #
         if num_branches == 2:
-            # @b0_in: (32, 64, 64)
-            # @b1_in: (planes, 32, 32)
-            b0_in, b1_in = x[0], x[1]
-            b1_in = self.b2_in_up(b1_in)
-
-            out = self.cfs_layers(self.b0_in_down(b0_in), b1_in)
-            # b0_in_down = self.b0_in_down(b0_in)
-            #
-            # cfb_rs_w = self.cfb_relu(self.cfb_rs_w)
-            # cfb_w = cfb_rs_w / cfb_rs_w.sum(0) + self.cfb_eps
-            # out = cfb_w[0] * b0_in_down + cfb_w[1] * b1_in
-            # out = self.cfb_relu(out)
-            # out = self.cfb_basic_block(out)
-
-        if num_branches == 3:
-            b0_in, b1_in, b2_in = x[0], x[1], x[2]
-
-            b2_in = self.b2_in_up(b2_in)  # 31->128
-            b0_b2_in = self.fuse_block_b0_b1(b2_in, b0_in)  # 128
-            b1_b2_in = self.fuse_block_b1_b2(b2_in, b1_in)  # 128
-
-            # CFB 1
-            # cfb_rs_w = self.cfb_relu(self.cfb_rs_w)
-            # cfb_w = cfb_rs_w / cfb_rs_w.sum(0) + self.cfb_eps
-            # cfb_out = cfb_w[0] * b0_b2_in + cfb_w[1] * b2_in
-            # cfb_out = self.cfb_relu(cfb_out)
-            # cfb_out = self.cfb_basic_block(cfb_out)
-
-            # CFB 2
+            # print("Down fusion")
+            # b0_in: [256, 64, 64]
+            # b1_in: [8, 32, 32] is original mms
+            b0_in, b1_in = x[0], x[1]  # ms = x[1]
+            # b0_in: [1, 192, 64, 64]  HR branch
+            # b1_in: [1, 8, 32, 32]   MR branch
+            
+            b1_in = self.b2_in_up(b1_in)  # b1_in: [1, 56, 32, 32]
+            # self.b0_in_down: match channel and shape   b0_in -> b1_in  channel 192 -> 56, spatial 64 -> 32
+            # self.cfs_layers: fuse (not change channel and shape)  out = fuse(HR, MR)
+            out = self.cfs_layers(self.b0_in_down(b0_in), b1_in)  # 还进行了XCA
+        # if num_branches == 3:
+        #     rs_w = self.relu(self.rs_w)
+        #     weight = rs_w / (torch.sum(rs_w, dim=0) + self.epsilon)
+        #     # b0_in: HR   [1, 32, 64, 64]; b1_in: MR  [1, 56, 32, 32]; b2_in: LR  [1, 8, 16, 16]
+        #     b0_in, b1_in, b2_in = x[0], x[1], x[2]  # ms = x[1]
+        #     b2_in = self.b2_in_up(b2_in)  # 31->128  # match channel 8 -> 72
+        #     b0_b2_in = self.fuse_block_b0_b1(b2_in, b0_in)  # 128  # C-MWSA  Query: b2_in, b0_b2_in shape: [1, 72, 16, 16]
+        #     b1_b2_in = self.fuse_block_b1_b2(b2_in, b1_in)  # 128  # C-MWSA  Query: b2_in, b0_b2_in shape: [1, 72, 16, 16]
+        #     out = weight[0] * b1_b2_in + weight[1] * self.cfs_layers(b0_b2_in, b2_in)  # 对应Fig.4第三列上下的直线
+            
+        ## FIXME: note, this is the new code to fix hard-coded 3 branches
+        ## the code is not guranteed
+        else:
             rs_w = self.relu(self.rs_w)
             weight = rs_w / (torch.sum(rs_w, dim=0) + self.epsilon)
-            out = weight[0] * b1_b2_in + weight[1] * self.cfs_layers(b0_b2_in, b2_in)  # 对应Fig.4第三列上下的直线
-            # out = weight[0] * b1_b2_in + weight[1] * cfb_out  # 对应Fig.4第三列上下的直线
-
+            # previous high res branch and now res branch
+            f_xs, x_bn = x[:-1], x[-1]
+            # upscale channel to now res branch
+            x_bn_up = self.bn_in_up(x_bn)
+            # fuse all other high res branch to now res branch
+            fused_fx_x_bns = []
+            for fuse_block_bi_bn, f_x in zip(self.fuse_block_bi_bns, f_xs):
+                fused_fx_x_bn = fuse_block_bi_bn(x_bn_up, f_x)
+                fused_fx_x_bns.append(fused_fx_x_bn)
+            # add by weight
+            out = weight[-1] * self.cfs_layers(fused_fx_x_bns[-1], x_bn_up)
+            for w, fused_fx_x_bn in zip(weight[:-1], fused_fx_x_bns[:-1]):
+                out = out + w * fused_fx_x_bn
+                
         return out
 
 
 @register_model("dcformer_mwsa_new")
 class DCFormerMWSA(BaseModel):
-    window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
+    # window_dict_train_reduce = {128: 16, 64: 8, 16: 2}
+    window_dict_train_reduce = {128: 16, 64: 8, 32: 4, 16: 2}
+    # window_dict_train_reduce = {128: 16, 64: 8, 32: 4}
+
+    window_dict_test_reduce = {128: 16, 64: 8, 32: 4}
+    # window_dict_test_reduce = {512: 16, 256: 8, 128: 4}
+
+    window_dict_test_full_p512 = {512: 16, 256: 8, 128: 4}
+    window_dict_test_full_p256 = {256: 16, 128: 8, 64: 4}
+    window_dict_test_full_p128 = {128: 16, 64: 8, 32: 4}
+    window_dict_test_full_p1000 = {1000: 20, 500: 10, 250: 5}
+
     window_dict = window_dict_train_reduce
 
     def __init__(
-            self,
-            spatial_size,
-            spectral_num,
-            mode="SUM",
-            channel_list=(64, (32, 64), (32, 64, 128)),
-            block_list=(1, (1, 1), (1, 1, 1)),  # (4, (4, 3), (4, 3, 2)),
-            num_heads=(2, (2, 2), (2, 2, 2)),
-            mlp_ratio=(2, (2, 2), (2, 2, 2)),
-            attn_drop=0.2,
-            drop_path=0.2,
-            mlp_drop=0.0,
-            added_c=1,
-            norm_type="bn",
-            residual=True,
-            patch_merge_step=False,
-            patch_size_list=[64, 64, 16],
-            crop_batch_size=20,
-            scale=8,
+        self,
+        spatial_size,
+        spectral_num,
+        mode="SUM",
+        channel_list=(64, (32, 64), (32, 64, 128)),
+        block_list=(1, (1, 1), (1, 1, 1)),  # (4, (4, 3), (4, 3, 2)),
+        num_heads=(2, (2, 2), (2, 2, 2)),
+        mlp_ratio=(2, (2, 2), (2, 2, 2)),
+        attn_drop=0.2,
+        drop_path=0.2,
+        mlp_drop=0.0,
+        added_c=1,
+        norm_type="bn",
+        residual=True,
+        patch_merge_step=False,
+        patch_size_list=[64, 64, 16],
+        crop_batch_size=20,
+        scale=8,
+        # x_range = x_w_cut_unfold.size(0) // batchsize + (x_w_cut_unfold.size(0) % batchsize != 0) 当x_range=1时推理速度最快
     ):
         super(DCFormerMWSA, self).__init__()
         self.first_fuse = mode
@@ -938,7 +982,7 @@ class DCFormerMWSA(BaseModel):
             blocks=self.blocks_list[0],
             norm_type=norm_type,
         )
-        stage1_out_channel = Bottleneck.expansion * self.channels_list[0]  # 4 * in_c
+        stage1_out_channel = Bottleneck.expansion * self.channels_list[0]
         print("--------------------------------")
 
         ################################################################################################
@@ -980,7 +1024,11 @@ class DCFormerMWSA(BaseModel):
             mlp_drop=mlp_drop,
             block=BasicBlock2,
             spatial_size=spatial_size,
+            last_stage=False,
         )
+        
+        stage2_out_channel = BasicBlock2.expansion * self.channels_list[0]
+        
         # print(self.stage2)
         print("--------------------------------")
 
@@ -993,7 +1041,22 @@ class DCFormerMWSA(BaseModel):
             self.channels_list[2][i] * BasicBlock2.expansion
             for i in range(len(self.channels_list[2]))
         ]
-
+        
+        # self.transition2 = self._our_make_transition_layer(
+        #     [stage2_out_channel],
+        #     num_channels,
+        #     spatial_size,
+        #     num_heads=num_heads[2],
+        #     mlp_ratio=mlp_ratio[2],
+        #     norm_type=norm_type,
+        #     attn_drop=attn_drop,
+        #     drop_path=drop_path,
+        # )
+        transition_num_channels = [
+            self.channels_list[3][i] * BasicBlock2.expansion
+            for i in range(len(self.channels_list[3]))
+        ]
+        
         self.stage3, pre_stage_channels = self._make_stage(
             num_modules=NUM_MODULES,
             num_branches=self.Stage3_NUM_BRANCHES,
@@ -1009,8 +1072,38 @@ class DCFormerMWSA(BaseModel):
             mlp_drop=mlp_drop,
             block=BasicBlock2,
             spatial_size=spatial_size,
+            last_stage=False
         )
         print("--------------------------------")
+        
+        
+        ############### new stage ##############
+        print("construct stage 4")
+        self.Stage4_NUM_BRANCHES = 4
+        num_channels = [
+            self.channels_list[3][i] * BasicBlock2.expansion
+            for i in range(len(self.channels_list[3]))
+        ]
+        
+        self.stage4, pre_stage_channels = self._make_stage(
+            num_modules=NUM_MODULES,
+            num_branches=self.Stage4_NUM_BRANCHES,
+            num_blocks=self.blocks_list[3],
+            num_inchannels=num_channels,
+            num_channels_pre_layer=pre_stage_channels,
+            num_channels_cur_layer=num_channels,
+            num_channels=self.channels_list[3],
+            num_heads=num_heads[3],
+            mlp_ratio=mlp_ratio[3],
+            attn_drop=attn_drop,
+            drop_path=drop_path,
+            mlp_drop=mlp_drop,
+            block=BasicBlock2,
+            spatial_size=spatial_size,
+            last_stage=True
+        )
+        print("--------------------------------")
+        
 
         ################################################################################################
         # 保主分支，进行最终分支融合输出
@@ -1039,16 +1132,66 @@ class DCFormerMWSA(BaseModel):
         # set all window_dict
         self._set_window_dict(self.window_dict)
 
+    # def _make_ms_fuse(
+    #         self,
+    #         num_branches,
+    #         block,
+    #         num_inchannels,
+    #         num_channels,
+    #         num_res_blocks,
+    #         stride=1,
+    #         norm_type="bn"
+    # ):
+    #     branch_index = num_branches - 1
+    #     downsample = None
+    #     if (
+    #             stride != 1
+    #             or num_inchannels[branch_index]
+    #             != num_channels[branch_index] * block.expansion
+    #     ):
+    #         downsample = nn.Sequential(
+    #             nn.Conv2d(
+    #                 num_inchannels[branch_index],
+    #                 num_channels[branch_index] * block.expansion,
+    #                 kernel_size=1,
+    #                 stride=stride,
+    #                 bias=False,
+    #             ),
+    #             normalization(norm_type, num_channels[branch_index] * block.expansion),
+    #             # nn.BatchNorm2d(num_channels[branch_index] * block.expansion),
+    #         )
+    #     if torch.cuda.is_available():
+    #         cfs_layers = nn.Sequential(
+    #             ChannelFuseBlock(
+    #                 num_inchannels[branch_index],
+    #                 num_channels[branch_index],
+    #                 num_res=num_res_blocks,
+    #                 stride=stride,
+    #                 downsample=downsample,
+    #             )
+    #         )
+    #     else:
+    #         cfs_layers = nn.Sequential(
+    #             ChannelFuseBlock(
+    #                 num_inchannels[branch_index],
+    #                 num_channels[branch_index],
+    #                 num_res=num_res_blocks,
+    #                 stride=stride,
+    #                 downsample=downsample,
+    #             )
+    #         )
+    #     return cfs_layers
+
     def _make_layer(
-            self,
-            downsample_mode,
-            block,
-            inplanes,
-            planes,
-            blocks,
-            spatial_size,
-            stride=1,
-            norm_type="bn",
+        self,
+        downsample_mode,
+        block,
+        inplanes,
+        planes,
+        blocks,
+        spatial_size,
+        stride=1,
+        norm_type="bn",
     ):
         # 产生Bottleneck
         # stem主分支进行通道扩展时(64->256),下采样/2
@@ -1089,23 +1232,24 @@ class DCFormerMWSA(BaseModel):
 
     # 为每个分支进行构造卷积模块
     def _make_stage(
-            self,
-            num_modules,
-            num_branches,
-            num_blocks,
-            num_inchannels,
-            num_channels_pre_layer,
-            num_channels_cur_layer,
-            num_channels,
-            num_heads,
-            mlp_ratio,
-            attn_drop,
-            drop_path,
-            mlp_drop,
-            block,
-            spatial_size,
-            fuse_method="SUM",
-            multi_scale_output=True,
+        self,
+        num_modules,
+        num_branches,
+        num_blocks,
+        num_inchannels,
+        num_channels_pre_layer,
+        num_channels_cur_layer,
+        num_channels,
+        num_heads,
+        mlp_ratio,
+        attn_drop,
+        drop_path,
+        mlp_drop,
+        block,
+        spatial_size,
+        fuse_method="SUM",
+        multi_scale_output=True,
+        last_stage=False,
     ):
         modules = []  # HRNet的多尺度目标检测
         for i in range(num_modules):
@@ -1131,6 +1275,7 @@ class DCFormerMWSA(BaseModel):
                     fuse_method,
                     spatial_size,
                     reset_multi_scale_output,
+                    last_stage=last_stage
                 )
             )
             num_inchannels = modules[-1].get_num_inchannels()
@@ -1139,11 +1284,11 @@ class DCFormerMWSA(BaseModel):
 
     # 全连接步进卷积,产生多分支
     def _make_transition_layer(
-            self,
-            num_channels_pre_layer,
-            num_channels_cur_layer,
-            spatial_size,
-            norm_type="bn",
+        self,
+        num_channels_pre_layer,
+        num_channels_cur_layer,
+        spatial_size,
+        norm_type="bn",
     ):
         num_branches_cur = len(num_channels_cur_layer)  # 2,3,4,4
         num_branches_pre = len(num_channels_pre_layer)  # 1,2,3,4
@@ -1205,16 +1350,16 @@ class DCFormerMWSA(BaseModel):
         return nn.ModuleList(transition_layers)
 
     def _our_make_transition_layer(
-            self,
-            num_channels_pre_layer,
-            num_channels_cur_layer,
-            spatial_size,
-            num_heads,
-            mlp_ratio,
-            norm_type="bn",
-            attn_drop=0.2,
-            drop_path=0.0,
-            mlp_drop=0.0,
+        self,
+        num_channels_pre_layer,
+        num_channels_cur_layer,
+        spatial_size,
+        num_heads,
+        mlp_ratio,
+        norm_type="bn",
+        attn_drop=0.2,
+        drop_path=0.0,
+        mlp_drop=0.0,
     ):
         num_branches_cur = len(num_channels_cur_layer)  # 2,3,4,4
         num_branches_pre = len(num_channels_pre_layer)  # 1,2,3,4
@@ -1227,12 +1372,8 @@ class DCFormerMWSA(BaseModel):
                 if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
                     transition_layers.append(
                         nn.Sequential(
-                            nn.Conv2d(
-                                num_channels_pre_layer[i],
-                                num_channels_cur_layer[i],
-                                1,
-                                1,
-                            ),
+                            nn.Conv2d(num_channels_pre_layer[i],
+                                      num_channels_cur_layer[i], 1, 1),
                             PanFormerEncoderLayer(
                                 num_channels_cur_layer[i],
                                 num_heads[0],
@@ -1243,12 +1384,9 @@ class DCFormerMWSA(BaseModel):
                                 drop_path=drop_path,
                                 attn_type="C",
                                 ffn_type="2d",
-                                norm_layer=partial(
-                                    normalization, "ln", spatial_size=spatial_size
-                                ),
-                            ),
-                        )
-                    )
+                                norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
+                            )
+                        ))
                 else:
                     transition_layers.append(None)
             else:
@@ -1268,6 +1406,9 @@ class DCFormerMWSA(BaseModel):
                                 spatial_size,
                                 inchannels,
                                 outchannels,
+                                kernel_size=3,
+                                stride=2,
+                                padding=1,
                                 num_heads=num_heads,
                                 mlp_ratio=mlp_ratio,
                                 norm_type=norm_type,
@@ -1279,9 +1420,34 @@ class DCFormerMWSA(BaseModel):
                         )
                     )
                 transition_layers.append(nn.Sequential(*transfpn))
+
+                # conv3x3s = []
+                # inchannels = num_channels_pre_layer[-1]
+                # outchannels = (
+                #     num_channels_cur_layer[i]
+                #     if j == i - num_branches_pre
+                #     else inchannels
+                # )
+                # transfpn = []
+                # if i + 1 - num_branches_pre > 0:
+                #     transfpn.append(
+                #         nn.Sequential(
+                #             TransitionFPN(
+                #                 len(num_channels_cur_layer),
+                #                 spatial_size,
+                #                 inchannels,
+                #                 outchannels,
+                #                 kernel_size=3,
+                #                 stride=2,
+                #                 padding=1,
+                #             )
+                #         )
+                #     )
+                # transition_layers.append(nn.Sequential(*transfpn))
+        # 获得同一个输入，不支持不同输入
         return nn.ModuleList(transition_layers)
 
-    def _forward_implem(self, x, ly, my, sy):
+    def _forward_implem(self, x, ly, hr_y, lr_y, sy):
         # pan, lms, mms, ms
         """
         TODO: ly三层卷后级联x再做transition_layer
@@ -1307,33 +1473,63 @@ class DCFormerMWSA(BaseModel):
         x = self.conv2(x)
         x = self.bn2(x)
         x = self.relu(x)
-        x = self.layer1(x)
+        # 64->256,64x64 BottleNeck
+        x = self.layer1(x)  # [256, 64, 64]
 
+        # PCFT扩展网络主干+pre-fusion unit2
+        """
+        inner blocks:  torch.Size([1, 64, 32, 32])
+        """
         x_list = []
         for i in range(self.Stage2_NUM_BRANCHES):
             if self.transition1[i] is not None:
                 if i < self.Stage2_NUM_BRANCHES - 1:
-                    x_list.append(self.transition1[i](x))
+                    x_list.append(
+                        self.transition1[i](x)
+                    )  # [256, 64, 64] -> [32, 64, 64]
                 else:
-                    x_list.append(self.transition1[i]((x, my)))
+                    # FPN, fuse mms(32x32) and lms(64x64)
+                    x_list.append(self.transition1[i]((x, hr_y)))
             else:
                 x_list.append(x)
-        x_list = self.stage2((x_list, sy))
 
-        x = self.stage3((x_list, None))
+        # 第二个分支内blocks+PCFT
+        x_list = self.stage2(
+            (x_list, lr_y)
+        )  # _make_stage->HighResolutionModule -> (_our_make_transition_layer, _make_fuse_layers) ->
+        # 第三个分支内blocks+PCFT
+        
+        x_list2 = []
+        # transition to stage 3 with 4 branches
+        for i in range(self.Stage3_NUM_BRANCHES):
+            if self.transition1[i] is not None:
+                if i < self.Stage3_NUM_BRANCHES - 1:
+                    x_list2.append(
+                        self.transition1[i](x_list[0])
+                    )
+                else:
+                    x_list2.append(self.transition1[i]((*x_list, hr_y)))
+            else:
+                x_list2.append(x)
+        
+        
+        x_list2 = self.stage3((x_list2, sy))
+        
+        x = self.stage4((x_list, None))
         x0_h, x0_w = x[0].size(2), x[0].size(3)
         x1 = F.interpolate(x[1], size=(x0_h, x0_w), mode="bilinear", align_corners=True)
         x2 = F.interpolate(x[2], size=(x0_h, x0_w), mode="bilinear", align_corners=True)
+        x3 = F.interpolate(x[3], size=(x0_h, x0_w), mode="bilinear", align_corners=True)
 
-        x = torch.cat([x[0], x1, x2], 1)
+        x = torch.cat([x[0], x1, x2, x3], 1)
 
         x = self.last_layer(x)
 
         return x
 
     def init_weights(
-            self,
-            pretrained="",
+        self,
+        pretrained="",
     ):
         print("=> init weights from normal distribution")
         for m in self.modules():
@@ -1374,15 +1570,15 @@ class DCFormerMWSA(BaseModel):
             if self.scale == 4:
                 # only work for upsample ratio 4
                 window_dict_test_reduce = {
-                    p_size // 2 ** i: _base_win_sz // 2 ** i for i in range(3)
+                    p_size // 2**i: _base_win_sz // 2**i for i in range(3)
                 }
             else:
                 # work for upsample ratio 8
                 window_dict_test_reduce = (
-                    {p_size // 2 ** i: _base_win_sz // 2 ** i for i in [0, 1, 3]}
+                    {p_size // 2**i: _base_win_sz // 2**i for i in [0, 1, 3]}
                     if p_size % 5 != 0 and p_size % 2 == 0
                     else {
-                        p_size // 2 ** i: 40 // 2 ** i
+                        p_size // 2**i: 40 // 2**i
                         for i in [0, 1, 3]  # warning: it may cause OOM
                     }
                 )
@@ -1462,40 +1658,152 @@ if __name__ == "__main__":
 
     net = DCFormerMWSA(
         64,
-        31,
+        8,
         "C",
-        added_c=3,
-        channel_list=(8, (8, 12), (8, 12, 16)),
-        num_heads=(4, (4, 4), (4, 4, 4)),
-        mlp_ratio=(1, (1, 1), (1, 1, 1)),
+        added_c=1,
+        channel_list=(48, (32, 56), (32, 56, 72), (32, 56, 72, 80)),
+        num_heads=(8, (8, 8), (8, 8, 8), (8,8,8,8)),
+        mlp_ratio=(1, (1, 1), (1, 1, 1), (1,1,1,1)),
         attn_drop=0.0,
         drop_path=0.0,
-        block_list=[2, [2, 2], [2, 2, 2]],
+        block_list=[1,[1,1],[1,1,1], [1,1,1,1]],
         norm_type="ln",
         patch_merge_step=False,
-        patch_size_list=[
-            16,
-            32,
-            64,
-            64,
-        ],
+        patch_size_list=[16,32,64,128,128],#[32, 128, 256, 256],  # [200, 200, 100, 25],
         scale=4,
         crop_batch_size=2,
-    )  # .cuda()
+    )#.cuda()
 
-    ms = torch.randn(1, 31, 16, 16)  # .cuda()
-    mms = torch.randn(1, 31, 32, 32)  # .cuda()
-    lms = torch.randn(1, 31, 64, 64)  # .cuda()
-    pan = torch.randn(1, 3, 64, 64)  # .cuda()
+    ########### test new patch merge model##########
+    # harvard x8 test set shape: [1000, 1000, 500, 125]
+    # ms = torch.randn(4, 31, 125, 125).cuda()
+    # mms = torch.randn(4, 31, 500, 500).cuda()
+    # lms = torch.randn(4, 31, 1000, 1000).cuda()
+    # pan = torch.randn(4, 3, 1000, 1000).cuda()
 
-    sr = net._forward_implem(pan, lms, mms, ms)
-    loss = ((torch.randn(1, 31, 64, 64) - sr) ** 2).sum()
-    loss.backward()
+    # net._set_window_dict({200: 40, 100: 20, 25: 5})
+    # patch_merge_model = PatchMergeModule(
+    #     net=net, device="cuda:0", patch_size_list=[200, 200, 100, 25], scale=8, crop_batch_size=1,
+    # )
+    # pm_sr = patch_merge_model.forward_chop(pan, lms, mms, ms)
+    # print(pm_sr.shape)
 
-    sum_p = 0
-    for p in net.parameters():
-        if p.requires_grad and p.grad is not None:
-            sum_p += p.numel()
+    # print(net)
 
-    print(sum_p / 1e6)
+    # net.criterion = SetCriterion({"loss": nn.L1Loss()}, weight_dict={"loss": 1.0})
+    # net.forward = net._forward_implem
+    # print(net.training)
+    # for n, m in net.named_modules():
+    #     if isinstance(m, MultiScaleWindowCrossAttention):
+    #         print(n)
+    #         print(m.window_dict)
+    #         print('----------'*6)
 
+    # print('======================set window_dict ouuter=================')
+    # net._set_mswa_max_key({32:16, 16:8, 8:4})
+    # for n, m in net.named_modules():
+    #     if isinstance(m, MultiScaleWindowCrossAttention):
+    #         print(n)
+    #         print(m.window_dict)
+    #         print('----------'*6)
+
+    ms = torch.randn(1, 8, 16, 16)#.cuda()
+    lr_ms = torch.randn(1, 8, 32, 32)#.cuda()
+    mr_ms = torch.randn(1, 8, 64, 64)
+    lms = torch.randn(1, 8, 128, 128)#.cuda()
+    pan = torch.randn(1, 1, 128, 128)#.cuda()
+    gt = torch.randn(1, 8, 128, 128)
+
+    # ms = torch.randn(1, 31, 64, 64).cuda()
+    # mms = torch.randn(1, 31, 128, 128).cuda()
+    # lms = torch.randn(1, 31, 256, 256).cuda()
+    # pan = torch.randn(1, 3, 256, 256).cuda()
+
+    # ms = torch.randn(1, 31, 125, 125).cuda()
+    # mms = torch.randn(1, 31, 500, 500).cuda()
+    # lms = torch.randn(1, 31, 1000, 1000).cuda()
+    # pan = torch.randn(1, 3, 1000, 1000).cuda()
+
+    # ms = torch.randn(1, 31, 16, 16).cuda()
+    # mms = torch.randn(1, 31, 64, 64).cuda()
+    # lms = torch.randn(1, 31, 128, 128).cuda()
+    # pan = torch.randn(1, 3, 128, 128).cuda()
+    # gt = torch.randn(1, 31, 128, 128).cuda()
+
+    # ms = torch.randn(1, 31, 128, 128).cuda(1)
+    # mms = torch.randn(1, 31, 256, 256).cuda(1)
+    # lms = torch.randn(1, 31, 512, 512).cuda(1)
+    # pan = torch.randn(1, 3, 512, 512).cuda(1)
+    # data = {"gt": lms, "up": lms, "rgb": pan, "lrhsi": ms}
+
+    # net._set_window_dict(net.window_dict_train_reduce)
+
+    print(net._forward_implem(pan, lms, mr_ms, lr_ms, ms).shape)
+    # print(net.val_step(ms, lms, pan).shape)
+
+    # criterion = torch.nn.L1Loss()
+    # sr, loss = net.train_step(ms, lms, pan, gt, criterion)
+    # loss.backward()
+
+    # for n, p in net.named_parameters():
+    #     if p.grad is None:
+    #         print(n)
+
+    # print(net.val_step(ms, lms, pan).shape)
+
+    # net.forward = net._forward_implem
+    # from fvcore.nn import FlopCountAnalysis, flop_count_table
+    # print(
+    #     flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms)))
+    # )
+
+    # print(net)
+
+    # print(torch.cuda.memory_summary())
+
+    ################################################################################################################################
+
+    # lr_hsi = torch.randn(1, 31, 128, 128)
+    # rgb = torch.randn(1, 3, 512, 512)
+    # hsi_up = torch.randn(1, 31, 512, 512)
+    # gt = torch.randn(1, 31, 512, 512)
+
+    # params: 2.0M
+    # FLOPs: 2.991G
+    # net = DCFormer_Reduce(31, 'C').cuda(1)
+    # net_patch_merge = PatchMergeModule(net, device='cuda:1')
+    # lr_hsi = F.interpolate(lr_hsi, scale_factor=4)
+    # rgb = torch.cat([rgb, torch.zeros(1, 31 - 3, 512, 512)], dim=1)
+    # sr = net_patch_merge.forward_chop(lr_hsi, hsi_up, rgb)
+    # print(sr[0].shape)
+
+    # print(net.val_step(lr_hsi, hsi_up, rgb).shape)
+    # print(net.val_step(ms, lms, pan).shape)
+
+    # print('save dict')
+    # params = net.state_dict()
+    # torch.save(params, '/Data/Machine Learning/Cao-ZiHan/panformer/weight/test_save_load.pth')
+    #
+    # print('load dict')
+    # params2 = torch.load('/Data/Machine Learning/Cao-ZiHan/panformer/weight/test_save_load.pth')
+    # net.load_state_dict(params2)
+    # print('load success')
+
+    # net._set_window_dict(net.window_dict_train_reduce)
+    # block = BasicBlock2(31, 128, 8, 64 * 64).cuda()
+    # # block.block.attn.window_dict_train_reduce
+    # # ====================fvcore============================
+    # from fvcore.nn import FlopCountAnalysis, flop_count_table
+    #
+    # print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
+    # # print(flop_count_table(FlopCountAnalysis(block, (lms))))
+    # # block(lms)
+    # # model | 6.919M  | 5.134G |
+    # # ======================================================
+    #
+    # import thop
+    #
+    # # mac:4.89G, params:6.89M
+    # mac, params = thop.profile(net, (pan, lms, mms, ms), report_missing=True)
+    # print(f'mac:{thop.utils.clever_format(mac)},'
+    #       f' params:{thop.utils.clever_format(params)}')

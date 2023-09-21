@@ -9,6 +9,7 @@ from model.base_model import MODELS
 from model.DCFNet import DCFNet
 from model.FusionNet import FusionNet
 from model.PANNet import VanillaPANNet
+
 # from model.M3DNet import M3DNet
 # from model.panformer import PanFormerGAU, PanFormerUNet2, PanFormerSwitch, PanFormerUNet, PanFormer
 # from model.dcformer import DCFormer
@@ -18,6 +19,7 @@ from model.PANNet import VanillaPANNet
 # from model.dcformer_reduce import DCFormer_Reduce
 # from model.dcformer_mwsa import DCFormerMWSA
 from model.dcformer_mwsa_wx import DCFormerMWSA
+
 # from model.fuseformer import MainNet
 # from model.dcformer_reduce_c_64 import DCFormer_Reduce_C64
 # from model.dcformer_reduce_c_32_tmp import DCFormer_Reduce_C32
@@ -27,6 +29,9 @@ from model.dcformer_mwsa_wx import DCFormerMWSA
 # from model.CSSNet import Our_netf
 # from model.mmnet import MMNet
 # from model.pmacnet import PMACNet
+from model.SSRNet import SSRNET
+from model.hsrnet import HSRNet
+from model.restfnet import ResTFNet
 
 # ablation
 # from model.dcformer_abla_only_channel_attn import DCFormer_XCA
