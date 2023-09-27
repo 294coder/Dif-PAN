@@ -149,7 +149,7 @@ print("=" * 50)
 # ============== GF5-GF1 ==========================
 # p = './weight/hsrnet_mvqqs7jp.pth'  # HSRNet
 
-p = './weight/fuseformer_1bwjog08.pth'  # FusFormer
+
 
 # ===============GF checkpoint=====================
 # p = './weight/dcformer_2a8g853d.pth'  # dcformer
