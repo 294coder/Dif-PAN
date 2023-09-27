@@ -32,12 +32,12 @@
 #  --logger_on
 
 ## pannet arch
- python main.py --proj_name restfnet --arch restfnet \
- -b 32 --device 'cuda:0' --dataset 'hisi' \
+ python main.py --proj_name fusformer --arch fuseformer \
+ -b 4 --device 'cuda:1' --dataset 'hisi' \
  --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
- --loss l1ssim --val_n_epoch 10 --comment 'restfnet gf5' \
+ --loss l1ssim --val_n_epoch 10 --comment 'fusformer gf5' \
  --logger_on --log_metrics \
- --pretrain --pretrain_id 'a5zmv8v9' --non_load_strict
+#  --pretrain --pretrain_id 'a5zmv8v9' --non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \

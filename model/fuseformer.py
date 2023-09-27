@@ -33,25 +33,28 @@ def init_weights(*modules):
 @register_model('fuseformer')
 class MainNet(BaseModel):
 
-    def __init__(self, spectral_num=31, num_feature=48):
+    def __init__(self, num_channel=8, rgb_channel=3, num_feature=48, scale=2):
         super(MainNet, self).__init__()
         # num_channel = 31
         # num_feature = 48
         ####################
+        
+        self.scale = scale
+        
         self.T_E = Transformer_E(num_feature)
         self.T_D = Transformer_D(num_feature)
         self.Embedding = nn.Sequential(
-            nn.Linear(spectral_num + 3, num_feature),
+            nn.Linear(num_channel + rgb_channel, num_feature),
         )
         self.refine = nn.Sequential(
             nn.Conv2d(num_feature, num_feature, 3, 1, 1),
             nn.LeakyReLU(),
-            nn.Conv2d(num_feature, spectral_num, 3, 1, 1)
+            nn.Conv2d(num_feature, num_channel, 3, 1, 1)
         )
 
     def _forward_implem(self, HSI, MSI):
         ################LR-HSI###################
-        UP_LRHSI = F.interpolate(HSI, scale_factor=4, mode='bicubic')  ### (b N h w)
+        UP_LRHSI = F.interpolate(HSI, scale_factor=self.scale, mode='bicubic')  ### (b N h w)
         UP_LRHSI = UP_LRHSI.clamp_(0, 1)
         sz = UP_LRHSI.size(2)
         Data = torch.cat((UP_LRHSI, MSI), 1)
@@ -84,7 +87,7 @@ class MainNet(BaseModel):
         else:
             pan = pan[:, :1]
 
-        sr = self(ms, pan)[0]
+        sr = self._forward_implem(ms, pan)[0]
 
         return sr
 
@@ -207,25 +210,16 @@ class Transformer_D(nn.Module):
 
 if __name__ == '__main__':
     import fvcore.nn as fvnn
+    import torch.cuda as tcd
+    
+    device = 'cuda:0'
 
-    net = MainNet()
-    ms = torch.randn(1, 31, 16, 16)
-    pan = torch.randn(1, 3, 64, 64)
-    gt = torch.randn(1, 31, 64, 64)
-    net.forward = net._forward_implem
+    net = MainNet(150, 4).to(device)
+    ms = torch.randn(1, 150, 40, 40).to(device)
+    pan = torch.randn(1, 4, 80, 80).to(device)
+    print(net._forward_implem(ms, pan)[0].shape)
     
-    # print(fvnn.parameter_count_table(net))
-    analysis = fvnn.FlopCountAnalysis(net, (ms, pan))
-    print(fvnn.flop_count_table(analysis))
+    print(tcd.memory_summary())
     
-    # sr = net(ms, pan)[0]
-    # loss = ((gt-sr)**2).sum()
-    # loss.backward()
-    
-    # sum_p = 0
-    # for m,p in net.named_parameters():
-    #     if p.requires_grad and p.grad is not None:
-    #         print(m, tuple(p.shape))
-    #         sum_p+=p.numel()
-            
-    # print(sum_p/1e6)
+    # analysis = fvnn.FlopCountAnalysis(net, (ms, pan))
+    # print(fvnn.flop_count_table(analysis))

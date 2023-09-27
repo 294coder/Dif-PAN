@@ -255,10 +255,6 @@ class ResBlock_ablation1(nn.Module):
         res = self.res(x)
         return res
 
-
-
-
-
         
 """ ------------ main fusionnet ------------ """
 @register_model('hpmnet')

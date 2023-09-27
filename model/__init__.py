@@ -20,7 +20,7 @@ from model.PANNet import VanillaPANNet
 # from model.dcformer_mwsa import DCFormerMWSA
 from model.dcformer_mwsa_wx import DCFormerMWSA
 
-# from model.fuseformer import MainNet
+from model.fuseformer import MainNet
 # from model.dcformer_reduce_c_64 import DCFormer_Reduce_C64
 # from model.dcformer_reduce_c_32_tmp import DCFormer_Reduce_C32
 # from model.dcformer_sg_c32 import DCFormer_SG_C32

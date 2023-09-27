@@ -29,7 +29,7 @@ torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
 dataset_type = "gf5"
 save_format = "mat"
-full_res = False
+full_res = True
 split_patch = False
 patch_size = 1000
 ergas_ratio = 2
@@ -55,9 +55,9 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "hsrnet"
+name = "fuseformer"
 subarch = ""
-dl_bs = 6
+dl_bs = 1
 crop_bs = 2
 
 
@@ -147,7 +147,9 @@ print("=" * 50)
 # =================================================
 
 # ============== GF5-GF1 ==========================
-p = './weight/hsrnet_mvqqs7jp.pth'
+# p = './weight/hsrnet_mvqqs7jp.pth'  # HSRNet
+
+p = './weight/fuseformer_1bwjog08.pth'  # FusFormer
 
 # ===============GF checkpoint=====================
 # p = './weight/dcformer_2a8g853d.pth'  # dcformer
@@ -239,7 +241,10 @@ elif dataset_type == "harvard":
 elif dataset_type == "harvard_x8":
     path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 elif dataset_type == "gf5":
-    path = "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
+    if not full_res:
+        path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"
+    else:
+        path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_OrigScale.h5"
 elif dataset_type == "gf":
     if not full_res:
         path = "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
