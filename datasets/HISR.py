@@ -17,7 +17,6 @@ class HISRDataSets(data.Dataset):
     def __init__(
         self,
         file: Union[h5py.File, str, dict],
-        normalize=False,
         aug_prob=0.0,
         rgb_to_bgr=False,
         full_res=False
@@ -35,7 +34,7 @@ class HISRDataSets(data.Dataset):
             )
         self.full_res = full_res
         data_s= self._split_parts(
-            file, normalize, rgb_to_bgr=rgb_to_bgr, full=full_res
+            file, rgb_to_bgr=rgb_to_bgr, full=full_res
         )
         
         if len(data_s) == 4:
@@ -96,7 +95,7 @@ class HISRDataSets(data.Dataset):
                 ]
             )
             if aug_prob != 0.0
-            else Indentity()
+            else lambda *x: x
         )
 
     def _split_parts(self, file, load_all=True, rgb_to_bgr=False, keys=None, full=False):
@@ -105,9 +104,9 @@ class HISRDataSets(data.Dataset):
         
         # warning: key RGB is HRMSI when the dataset is GF5-GF1
         if not full:
-            keys = ['GT', 'LRHSI', 'HRMSI', 'HSI_up']
+            keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
         else:
-            keys = ['LRHSI', 'HRMSI', 'HSI_up']
+            keys = ['LRHSI', 'RGB', 'HSI_up']
         
         if load_all:
             # load all data in memory

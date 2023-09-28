@@ -149,7 +149,7 @@ print("=" * 50)
 # ============== GF5-GF1 ==========================
 # p = './weight/hsrnet_mvqqs7jp.pth'  # HSRNet
 
-
+p = 'weight/fuseformer_3gq75ygm.pth'
 
 # ===============GF checkpoint=====================
 # p = './weight/dcformer_2a8g853d.pth'  # dcformer
@@ -298,7 +298,7 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     ds = WV3Datasets(d, hp=False, full_res=full_res)
 elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:
     d = h5py.File(path)
-    ds = HISRDataSets(d)
+    ds = HISRDataSets(d, full_res=full_res)
 elif dataset_type == "gf":
     d = h5py.File(path)
     ds = GF2Datasets(d, full_res=full_res)

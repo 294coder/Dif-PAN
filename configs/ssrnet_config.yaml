@@ -13,8 +13,8 @@ max_norm: 0.01
 path:
   #  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
   #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
-  train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/train_GF5_GF1.h5"
-  val_path: "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/train_GF5_GF1_23tap_new.h5"
+  val_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"
 
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
 #  val_path: '/home/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5'

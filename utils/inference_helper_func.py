@@ -31,7 +31,11 @@ def unref_for_loop(model,
                    **patch_merge_module_kwargs):
     bs = dl.batch_size
     all_sr = []
-    spa_size = tuple(dl.dataset.lms.shape[-2:])
+    try:
+        spa_size = tuple(dl.dataset.lms.shape[-2:])
+    except AttributeError:
+        spa_size = tuple(dl.dataset.rgb.shape[-2:])
+    
     inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
     if split_patch:
         # assert bs == 1, 'batch size should be 1'

@@ -314,8 +314,8 @@ def main(local_rank, args):
                     h5py_to_dict(h5_train, keys),
                     h5py_to_dict(h5_val, keys),
                 )
-                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0], hp=args.hp)
-                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1], hp=args.hp)
+                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0])
+                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1])
             elif args.dataset == "gf":
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (
