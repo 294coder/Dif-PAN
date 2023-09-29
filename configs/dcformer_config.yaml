@@ -1,6 +1,6 @@
 optimizer:
   name: "adamw"
-  lr: !!float 4e-5
+  lr: !!float 1e-3
   weight_decay: !!float 1e-6
 
 lr_scheduler:
@@ -19,7 +19,7 @@ lr_scheduler:
   # factor: !!float 0.2
   # cooldown: 50
   name: "multi_step"
-  milestones: [ 1000 ] #[100, 800]
+  milestones: [80, 6000, 1200] #[100, 800]
   gamma: 0.1
 
 max_norm: 0.3
@@ -81,13 +81,13 @@ network_configs:
 
   dcformer_reduce:
     spectral_num: 31
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_mwsa:
     spectral_num: 31
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
@@ -96,15 +96,15 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: # [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  #[32, [32, 56], [32, 56, 72]] #[8, [8, 16], [8, 16, 24]]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: # [ 8,[ 8,8 ],[ 8,8,8 ] ] #[4, [ 4, 4], [ 8, 8, 8 ]]
-    mlp_ratio: #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[1, [ 1, 1 ], [ 1, 1, 1]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ]
-    block_list: # [ 1,[ 1,1 ],[ 1,1,1 ] ] # [ 2,[ 2,2 ],[ 2,2,2 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] #[32, [32, 56], [32, 56, 72]] #[8, [8, 16], [8, 16, 24]]  # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 12], [8, 12, 12]] # [ 8,[ 8,8 ],[ 8,8,8 ] ] #[4, [ 4, 4], [ 8, 8, 8 ]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[1, [ 1, 1 ], [ 1, 1, 1]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ]
+    block_list: [2, [2, 2], [2, 2, 2]] # [ 1,[ 1,1 ],[ 1,1,1 ] ] # [ 2,[ 2,2 ],[ 2,2,2 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
     patch_size_list: [16, 64, 128, 128] #[64, 64, 32, 8]
     scale: 8
-    residual: True  # vis-ir_RS
+    residual: True # vis-ir_RS
     # for harvard x8
     attn_drop: 0.2
     drop_path: 0.2
@@ -112,41 +112,41 @@ network_configs:
 
   dcformer_reduce_c32:
     spectral_num: 31
-    channel_list: [ 64, [ 32, 64 ], [ 32, 64, 128 ] ]
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    channel_list: [64, [32, 64], [32, 64, 128]]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_reduce_c64:
     spectral_num: 31
-    channel_list: [ 64, [ 64, 128 ], [ 64, 128, 256 ] ]
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    channel_list: [64, [64, 128], [64, 128, 256]]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_sg_c32:
     spectral_num: 31
-    channel_list: [ 64, [ 32, 64 ], [ 32, 64, 128 ] ]
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    channel_list: [64, [32, 64], [32, 64, 128]]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_mobile_x8:
     spectral_num: 31
-    channel_list: [ 64, [ 32, 64 ], [ 32, 64, 128 ] ]
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    channel_list: [64, [32, 64], [32, 64, 128]]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_abla_only_xca:
     spectral_num: 31
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
   dcformer_abla_only_mwa:
     spectral_num: 31
-    block_list: [ 4, [ 4, 3 ], [ 4, 3, 2 ] ]
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
 
@@ -164,13 +164,13 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
@@ -186,13 +186,13 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
@@ -209,13 +209,13 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
@@ -231,13 +231,13 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
@@ -253,13 +253,13 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
@@ -275,19 +275,18 @@ network_configs:
     spectral_num: 31
     added_c: 3
     mode: "C"
-    channel_list: [ 48, [ 48, 96 ], [ 48, 96, 192 ] ]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8, [ 8, 8 ], [ 8, 8, 8 ] ]
-    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[2, [2, 2], [2, 2, 2]]
-    block_list: [ 1,[ 1,1 ],[ 1,1,1 ] ]  # [6, [6, 6], [6, 6, 6]]
+    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
+    num_heads: [8, [8, 8], [8, 8, 8]]
+    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
+    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
+    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
     # for harvard x8
     attn_drop: 0.2
     drop_path: 0.2
     crop_batch_size: 16
-
 
 logger_config:
   base_path: ./log_file/
