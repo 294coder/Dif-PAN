@@ -7,6 +7,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.utils.data as data
+import time
 from wandb.util import generate_id
 
 from datasets.FLIR_2 import FLIRDataset
@@ -59,6 +60,7 @@ def get_args():
             "ssrnet",
             "hsrnet",
             "restfnet",
+            "hpmnet",
         ],
     )
     parser.add_argument(
@@ -91,6 +93,7 @@ def get_args():
             "pia_fuse",
             "u2fusion",
             "swinfusion",
+            "hpm",
             "none",
             "None",
         ],
@@ -164,6 +167,11 @@ def main(local_rank, args):
     # load other configuration and merge args and configs together
     configs = config_load(args.arch, "./configs")
     args = merge_args_namespace(args, convert_config_dict(configs))
+    args.logger_config.name = (
+        time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+        + "_"
+        + args.logger_config.name
+    )
     if is_main_process():
         print(args)
 

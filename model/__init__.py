@@ -29,9 +29,10 @@ from model.fuseformer import MainNet
 # from model.CSSNet import Our_netf
 # from model.mmnet import MMNet
 # from model.pmacnet import PMACNet
-from model.SSRNet import SSRNET
-from model.hsrnet import HSRNet
-from model.restfnet import ResTFNet
+# from model.SSRNet import SSRNET
+# from model.hsrnet import HSRNet
+# from model.restfnet import ResTFNet
+from model.HPMNet import fusionnet
 
 # ablation
 # from model.dcformer_abla_only_channel_attn import DCFormer_XCA
