@@ -40,13 +40,14 @@
 #  --pretrain --pretrain_id '2o663zwh' #--non_load_strict
 
 ## dcformer arch
-python main.py --proj_name dcformer --arch dcformer --sub_arch 'mwsa_new' \
--b 8 --device 'cuda:1' --dataset 'hisi' --logger_on --log_metrics \
---warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0.2 0. \
---loss 'l1ssim' --val_n_epoch 10 --comment '根据wx的新代码进行 cave x8 的训练' \
---ergas_ratio 8 \
---pretrain --pretrain_id '1gx5sc1l' --non_load_strict
-#  --save_every_eval
+python main.py --proj_name hpmnet --arch hpmnet  \
+-b 3 --device 'cuda:1' --dataset 'gf' --logger_on --log_metrics \
+--warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+--loss 'hpm' --val_n_epoch 10 --comment 'hpmnet gf2' \
+--ergas_ratio 4 \
+--pretrain --pretrain_id '317p7rpk' \
+--save_every_eval
+# --non_load_strict
 
 
 ## dcformer_mwsa arch

@@ -258,7 +258,7 @@ class ResBlock_ablation1(nn.Module):
         
 """ ------------ main fusionnet ------------ """
 @register_model('hpmnet')
-class fusionnet(nn.Module):
+class fusionnet(BaseModel):
     
     def __init__(
         self, n_iter=6, h_nc=64, in_c=32, out_c=31, m_c=3, nc=[80, 160, 320], nb=1,
@@ -271,8 +271,21 @@ class fusionnet(nn.Module):
         self.x = X_PriorNet(
             in_c=in_c, out_c=out_c, nc=nc, nb=nb,
             act_mode=act_mode, downsample_mode=downsample_mode, upsample_mode=upsample_mode)
+        
+        lamda_m = 0.01  
+        lamda_p = 0.01  
+        lamda_m = torch.tensor(lamda_m).float().view([1, 1, 1, 1])
+        lamda_p = torch.tensor(lamda_p).float().view([1, 1, 1, 1])  
+        [lamda_m, lamda_p] = [el for el in [lamda_m, lamda_p]] 
+        self.register_buffer('lamda_m', lamda_m)
+        self.register_buffer('lamda_p', lamda_p)
       
-    def forward(self, Y_h, Y_m, Y_p, lamda_m, lamda_p):
+    def _forward_implem(self, Y_h, Y_m, Y_p, lamda_m=None, lamda_p=None):
+        if lamda_m is None:
+            lamda_m = self.lamda_m
+        if lamda_p is None:
+            lamda_p = self.lamda_p
+        
         # Initialization    
         mu     = 0.01
         mu     = torch.tensor(mu).float().view([1, 1, 1, 1]).to(lamda_p)
@@ -287,6 +300,34 @@ class fusionnet(nn.Module):
             z          = self.z(x, Y_h, Y_m, hypers[:, i, ...], hypers[:, i+self.n, ...] )     
             x          = self.x(z, Y_p,      hypers[:, i+self.n*2, ...])
         return x 
+    
+    def train_step(self, ms, lms, pan, gt, criterion):
+        pan_downsample = F.interpolate(pan, size=(pan.shape[2]//2, pan.shape[3]//2), mode='bilinear', align_corners=True)
+        sr = self._forward_implem(ms, pan_downsample, pan)
+        loss = criterion(sr, gt)
+        
+        return sr, loss
+    
+    def val_step(self, ms, lms, pan):
+        pan_downsample = F.interpolate(pan, size=(pan.shape[2]//2, pan.shape[3]//2), mode='bilinear', align_corners=True)
+        sr = self._forward_implem(ms, pan_downsample, pan)
+        return sr
+    
+    def patch_merge_step(self, ms, lms, pan, hisi=True, split_size=64):
+        # all shape is 64
+        pan_downsample = F.interpolate(pan, size=(pan.shape[2]//2, pan.shape[3]//2), mode='bilinear', align_corners=True)
+        mms = F.interpolate(ms, size=(split_size // 2, split_size // 2), mode='bilinear', align_corners=True)
+        ms = F.interpolate(ms, size=(split_size // 4, split_size // 4), mode='bilinear', align_corners=True)
+        if hisi:
+            pan = pan[:, :3]
+        else:
+            pan = pan[:, :1]
+
+        sr = self._forward_implem(ms, pan_downsample, pan)
+
+        return sr
+        
+        
 
 
 """ -------------- -------------- --------------
@@ -416,8 +457,8 @@ if __name__ == '__main__':
     net = fusionnet(
         n_iter=5,
         h_nc=64,
-        in_c=31+1,
-        out_c=31,
+        in_c=8+1,
+        out_c=8,
         m_c=3,
         nc=[80, 160, 320],
         nb=1,
@@ -426,7 +467,7 @@ if __name__ == '__main__':
         upsample_mode='convtranspose'
     ).to(device)
     
-    lr_hsi = torch.randn(1, 31, 16, 16).to(device)
+    lr_hsi = torch.randn(1, 8, 16, 16).to(device)
     hr_msi = torch.randn(1, 1, 32, 32).to(device)
     pan = torch.randn(1, 1, 64, 64)
     
@@ -435,6 +476,9 @@ if __name__ == '__main__':
     lamda_m = torch.tensor(lamda_m).float().view([1, 1, 1, 1])
     lamda_p = torch.tensor(lamda_p).float().view([1, 1, 1, 1])  
     [lamda_m, lamda_p] = [el.to(device) for el in [lamda_m, lamda_p]] 
+    
+    
+    net.forward = net._forward_implem
     
     print(net(lr_hsi, hr_msi, pan, lamda_m, lamda_p).shape)
     

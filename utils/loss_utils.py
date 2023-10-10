@@ -978,6 +978,19 @@ class CDDFusionLoss(nn.Module):
         loss_d = dict(l1_loss=l1_loss, dct_loss=dct_loss, mcg_loss=mcg_loss)
 
         return l1_loss + dct_loss + mcg_loss, loss_d
+    
+    
+def HPM_gradient_diff(Pred, GT):  
+    R = F.pad(GT, [0, 1, 0, 0])[:, :, :, 1:] 
+    B = F.pad(GT, [0, 0, 0, 1])[:, :, 1:, :]
+    dx1, dy1 = torch.abs(R - GT), torch.abs(B - GT)
+    dx1[:, :, :, -1], dy1[:, :, -1, :] = 0, 0 
+    R = F.pad(Pred, [0, 1, 0, 0])[:, :, :, 1:] 
+    B = F.pad(Pred, [0, 0, 0, 1])[:, :, 1:, :]
+    dx2, dy2 = torch.abs(R - Pred), torch.abs(B - Pred)
+    dx2[:, :, :, -1], dy2[:, :, -1, :] = 0, 0   
+    res = torch.abs(dx2-dx1)+torch.abs(dy2-dy1)
+    return res.mean()
 
 
 def get_loss(loss_type, channel=31):
@@ -989,6 +1002,8 @@ def get_loss(loss_type, channel=31):
         criterion = HybridL1L2()
     elif loss_type == "smoothl1":
         criterion = nn.SmoothL1Loss()
+    elif loss_type == 'hpm':
+        criterion = TorchLossWrapper((1., 0.3), l1=nn.L1Loss(), grad_loss=HPM_gradient_diff)
     elif loss_type == "l1ssim":
         criterion = HybridL1SSIM(channel=channel, weighted_r=(1.0, 0.1))
     elif loss_type == "ssimrmi_fuse":
@@ -1020,12 +1035,15 @@ def get_loss(loss_type, channel=31):
 if __name__ == "__main__":
     # loss = SSIMLoss(channel=31)
     # loss = CharbonnierLoss(eps=1e-3)
-    # x = torch.randn(1, 31, 64, 64, requires_grad=True)
-    # y = x + torch.randn(1, 31, 64, 64) / 10
-    # l = loss(x, y)
-    # l.backward()
-    # print(l)
-    # print(x.grad)
+    
+    loss = get_loss("hpm")
+    
+    x = torch.randn(1, 31, 64, 64, requires_grad=True)
+    y = x + torch.randn(1, 31, 64, 64) / 10
+    l = loss(x, y)
+    l.backward()
+    print(l)
+    print(x.grad)
 
     import PIL.Image as Image
 

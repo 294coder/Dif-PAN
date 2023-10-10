@@ -24,15 +24,15 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:0"
+device = "cuda:1"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "gf5"
+dataset_type = "qb"
 save_format = "mat"
 full_res = True
 split_patch = False
 patch_size = 1000
-ergas_ratio = 2
+ergas_ratio = 4
 patch_size_list = [
     patch_size // ergas_ratio,
     patch_size // 2,
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "fuseformer"
+name = "hpmnet"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -101,6 +101,8 @@ print("=" * 50)
 # p = './weight/dcformer_hbnwhpe8/ep_230.pth'  # dcformer_mwsa (r)
 
 # p = './weight/dcformer_1g9ljhul.pth'  # dcformer_mwsa wx 8 CAttn
+
+p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 # ========================================================
 
 # ================HISI CAVE checkpoint=============
@@ -149,7 +151,7 @@ print("=" * 50)
 # ============== GF5-GF1 ==========================
 # p = './weight/hsrnet_mvqqs7jp.pth'  # HSRNet
 
-p = 'weight/fuseformer_3gq75ygm.pth'
+# p = 'weight/fuseformer_3gq75ygm.pth'
 
 # ===============GF checkpoint=====================
 # p = './weight/dcformer_2a8g853d.pth'  # dcformer
@@ -176,6 +178,8 @@ p = 'weight/fuseformer_3gq75ygm.pth'
 
 
 # p = './weight/pannet_3knmo9wy.pth'  # pannet
+
+p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
 # =================================================
 
 # ==============FLIR checkpoint===================
@@ -237,7 +241,7 @@ elif dataset_type == "cave_x8":
     path = "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 elif dataset_type == "harvard":
     # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
-    path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"    
+    path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
 elif dataset_type == "harvard_x8":
     path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 elif dataset_type == "gf5":
@@ -322,7 +326,15 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     const = 2047.0
 elif dataset_type in ["gf"]:
     const = 1023.0
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "roadscene", "tno", "gf5"]:
+elif dataset_type in [
+    "cave",
+    "harvard",
+    "cave_x8",
+    "harvard_x8",
+    "roadscene",
+    "tno",
+    "gf5",
+]:
     const = 1.0
 else:
     raise NotImplementedError
@@ -334,10 +346,16 @@ except:
     print("no gt")
     pass
 
-if save_mat:
+if save_mat:  # torch.tensor(d['sr'][:, [4,2,0]]),  torch.tensor(d['gt'][:, [4,2,0]])
     _ref_or_not_s = "unref" if full_res else "ref"
     _patch_size_s = f"_p{patch_size}" if split_patch else ""
-    if dataset_type not in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:  # wv3, qb, gf
+    if dataset_type not in [
+        "cave",
+        "harvard",
+        "cave_x8",
+        "harvard_x8",
+        "gf5",
+    ]:  # wv3, qb, gf
         d["ms"] = np.asarray(ds.ms[:]) * const
         d["lms"] = np.asarray(ds.lms[:]) * const
         d["pan"] = np.asarray(ds.pan[:]) * const
