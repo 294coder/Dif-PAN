@@ -8,6 +8,7 @@ import torch
 import torch.cuda.amp as amp
 import torch.distributed as dist
 import torch.nn as nn
+from torch_ema import ExponentialMovingAverage
 from torch.utils.data import DataLoader
 from contextlib import nullcontext
 
@@ -147,6 +148,7 @@ def train(
         epochs: int,
         eval_every_epochs: int,
         save_path: str,
+        check_save_fn: Callable=None,
         logger: Union[WandbLogger, TensorboardLogger] = None,
         resume_epochs: int = 1,
         ddp=False,
@@ -255,7 +257,7 @@ def train(
             params["lr_scheduler"] = lr_scheduler.state_dict()
             params["metrics"] = val_acc_dict
             if not args.save_every_eval:
-                if val_loss < optim_val_loss and is_main_process():
+                if val_loss < optim_val_loss and is_main_process() or check_save_fn(val_acc_dict):
                     torch.save(params, save_path)
                     optim_val_loss = val_loss
                     logger.print("save params")

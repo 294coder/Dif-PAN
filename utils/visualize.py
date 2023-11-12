@@ -3,18 +3,43 @@ import os.path as osp
 from typing import Tuple, Union
 
 import cv2
+from einops import rearrange
 import numpy as np
 import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
 from utils.misc import to_numpy
 
+def right_pad_dims_to(x, t):
+    padding_dims = x.ndim - t.ndim
+    if padding_dims <= 0:
+        return t
+    return t.view(*t.shape, *((1,) * padding_dims))
 
 def permute_dim(*args):
     d = [
         i.permute(2, 0, 1) for i in args
     ]
     return d
+
+def percent_norm(img, p=0.9, m=0):
+    """
+    normalize image by percent
+    :param img: numpy array, shape [B, C, H, W]
+    :param p: float, range (0, 1), default 0.9
+    :return:
+    """
+    s = torch.quantile(rearrange(img, 'b ... -> b (...)').abs(), 
+                           p, dim=-1, keepdim=True)
+    # s.clamp(0, 1)
+    
+    s = right_pad_dims_to(img, s)
+    
+    img = img.clamp(-s, s) / s
+    img = ((img + 1) / 2) * m  # [0, m]
+    img = img.clamp(0, 1)
+    
+    return img
 
 
 def normalize(img):
@@ -255,6 +280,82 @@ def plt_plot_img_without_white_margin(img, *args, **kwargs):
     plt.gca().set_axis_off()
 
     return fig, ax
+
+############################ GETLOCAL FUNCTION: bytecode to get a local varible #######################
+from bytecode import Bytecode, Instr
+'''
+                         # Instr('STORE_FAST', '_res'),
+                         # Instr('LOAD_FAST', self.varname[0]),
+                         # Instr('STORE_FAST', '_value'),
+                         # Instr('LOAD_FAST', '_res'),
+                         # Instr('LOAD_FAST', '_value'),
+
+
+                        # Instr('STORE_FAST', '_res'),
+                        #  Instr('LOAD_FAST', '_res'),
+                        # Instr('STORE_FAST', '_res'),
+                        # Instr('LOAD_FAST', self.varname[0]),
+                        # Instr('LOAD_FAST', '_res'),
+'''
+class get_local(object):
+    cache = {}
+    is_activate = False
+
+    def __init__(self, *args):
+        self.varname = args
+
+    def __call__(self, func):
+        if not type(self).is_activate:
+            return func
+
+        type(self).cache[func.__qualname__] = []
+        c = Bytecode.from_code(func.__code__)
+        extra_code = []
+        # extra_code = [Instr('STORE_FAST', '_res'),
+        #               Instr('LOAD_FAST', '_res')]
+        # for var in self.varname:
+        #     extra_code.extend([
+        #         # Instr('STORE_FAST', '_res'),
+        #         Instr('LOAD_FAST', var),
+        #         Instr('LOAD_FAST', '_res')]
+        #     )
+        # extra_code.extend([
+        #                  Instr('BUILD_LIST', 1+len(self.varname)),
+        #                  Instr('STORE_FAST', '_result_list'),
+        #                  Instr('LOAD_FAST', '_result_list'),
+        #              ])
+        
+        extra_code.extend([
+            *[Instr('LOAD_FAST', varn) for varn in self.varname],
+            Instr('BUILD_LIST', 1+len(self.varname)),
+            Instr('STORE_FAST', '_result_list'),
+            Instr('LOAD_FAST', '_result_list'),
+        ])
+
+        c[-1:-1] = extra_code
+        func.__code__ = c.to_code()
+
+        def wrapper(*args, **kwargs):
+            res = func(*args, **kwargs)
+            saved_vs = res[-len(self.varname):]
+            output_vs = res[:-len(self.varname)]
+            for i, v in enumerate(saved_vs):
+                if hasattr(v, 'detach'):
+                    v = v.detach().cpu()  #.numpy()
+                    saved_vs[i] = v
+            
+            type(self).cache[func.__qualname__].append(saved_vs)
+            return output_vs if len(output_vs) > 1 else output_vs[0]
+        return wrapper
+
+    @classmethod
+    def clear(cls):
+        for key in cls.cache.keys():
+            cls.cache[key] = []
+
+    @classmethod
+    def activate(cls):
+        cls.is_activate = True
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt

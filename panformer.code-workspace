@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../datasets"
+		},
+		{
+			"path": "../../../cavex4"
 		}
 	],
 	"settings": {

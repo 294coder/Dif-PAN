@@ -99,8 +99,17 @@ if __name__ == '__main__':
     lms = torch.randn(1, 8, 256, 256).cuda(1)
     pan = torch.randn(1, 1, 256, 256).cuda(1)
     model = PMACNet().cuda(1)
-    out = model._forward_implem(lms, pan)
+    
+    import time
+    
+    start = time.time()
+    
+    for _ in range(10):    
+        out = model._forward_implem(lms, pan)
+    
+    end_t = time.time()
+    print((end_t - start)/10)
 
-    print(out.shape)
+    # print(out.shape)
     
     # 3v08xxj4 gf2 on 2

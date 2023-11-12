@@ -35,12 +35,12 @@ network_configs:
   #   attn_dim: 64
   #   hp_dim: 64
   #   n_stage: 5
-  pan_dim: 1
-  lms_dim: 145 #102 #128
+  pan_dim: 3
+  lms_dim: 31 #145 #102 #128
   attn_dim: 64
   hp_dim: 64
   n_stage: 5
-  patch_merge: yes
+  patch_merge: no
   crop_batch_size: 32
   patch_size_list: [16,64,64]
   scale: 4

@@ -6,6 +6,9 @@ from einops import rearrange
 from beartype import beartype
 from typing import Tuple, List, Dict, Union, Optional, Any
 
+from utils.visualize import get_local
+get_local.activate()
+
 from model.base_model import register_model, BaseModel
 
 
@@ -81,7 +84,7 @@ class ReflashValue(nn.Module):
 
 
 class ReflashAttn(nn.Module):
-    def __init__(self, nhead=8, ksize=3):
+    def __init__(self, nhead=8, ksize=5):
         super().__init__()
         self.body = nn.Sequential(
             nn.Conv2d(nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False),
@@ -182,11 +185,14 @@ class MSReversibleRefine(nn.Module):
         self.nhead = nhead
         self.first_stage = first_stage
 
+    @get_local('refined_lms', 'out')
+    # @get_local('reuse_attn')
     def forward(self, reuse_attn, lms, hp_in):
         *_, h, w = lms.shape
 
         if not self.first_stage:
             lms = rearrange(lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
+            # print(reuse_attn.shape)
             reuse_attn = self.reflash_attn(reuse_attn)
             refined_lms = torch.einsum("b h d e, b h e m -> b h d m", reuse_attn, lms)  # (lms x pan) x lms
             refined_lms = rearrange(
@@ -203,6 +209,9 @@ class MSReversibleRefine(nn.Module):
 
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
         out = self.fuse_conv(reverse_out)
+        
+        # print(refined_lms.shape, out.shape)
+        # print('-'*30)
 
         return out
 
@@ -336,6 +345,14 @@ class AttnFuseMain(BaseModel):
     
     def patch_merge_step(self, ms, lms, pan):
         return self._forward_implem(lms, pan)
+    
+    
+def _get_feat(key='MSReversibleRefine.forward'):
+    cache = get_local.cache
+    refined_feat = cache[key]
+    get_local.clear()
+    
+    return refined_feat
 
 
 if __name__ == "__main__":
@@ -350,17 +367,42 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 8, 16, 16).cuda(1) 
-    lms = torch.randn(1, 8, 64, 64).cuda(1)
-    pan = torch.randn(1, 3, 64, 64).cuda(1)
+    ms = torch.randn(1, 8, 64, 64).cuda(1) 
+    lms = torch.randn(1, 8, 256, 256).cuda(1)
+    pan = torch.randn(1, 1, 256, 256).cuda(1)
 
-    net = AttnFuseMain(pan_dim=3, lms_dim=8, attn_dim=32, hp_dim=32, n_stage=5,
-                       patch_merge=True, patch_size_list=[16,64,64], scale=4,
+    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5,
+                       patch_merge=False, patch_size_list=[16,64,64], scale=4,
                        crop_batch_size=32).cuda(1)
     net.forward = partial(_only_for_flops_count_forward, net)
-    # sr = net.val_step(ms, lms, pan)
+    
+    # for _ in range(3):
+    print('=='*50)
+    sr = net.val_step(ms, lms, pan)
     # print(sr.shape)
     
+    # cache = get_local.cache
+    # cache = _get_feat()
+    # for c in cache:
+    #     print(c[0].shape)
+    # for i in range(len(cache)):
+    #     for j in range(2):
+    #         print(cache[i][j].shape)
+    # pass
     
-    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    print(net(lms, pan).shape)
+    
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    # print(net(lms, pan).shape)
+    
+    
+    ## dataset: num_channel HSI/PAN
+    # Pavia: 102/1
+    # botswana: 145/1
+    # chikusei: 128/3
+    
+    # num_p = 0
+    # for p in net.parameters():
+    #     if p.requires_grad:
+    #         num_p += p.numel()
+            
+    # print(num_p/1e6)

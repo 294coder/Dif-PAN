@@ -3,6 +3,7 @@ import os
 import os.path as osp
 
 import h5py
+import time
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -29,9 +30,9 @@ from utils import (
     module_load,
     resume_load,
     set_all_seed,
+    BestMetricSaveChecker,
+    get_loss
 )
-from utils.loss_utils import get_loss
-
 
 def get_args():
     parser = argparse.ArgumentParser("PANFormer")
@@ -57,7 +58,8 @@ def get_args():
             "gppnn",
             "pmacnet",
             "gppnn_cvpr",
-            "hyper_transformer"
+            "hyper_transformer",
+            "hypertransformer_pre",
         ],
     )
     parser.add_argument(
@@ -262,7 +264,7 @@ def main(local_rank, args):
     if is_main_process() and args.logger_on:
         # logger = WandbLogger(args.proj_name, config=args, resume=args.resume,
         #                      id=args.run_id if not args.load else status_tracker.status['id'], run_name=args.run_name)
-        args.logger_config.name += "_" + args.run_id
+        args.logger_config.name = time.strftime('%m-%d-%H:%M') + "_" + args.logger_config.name + "_" + args.run_id
         logger = TensorboardLogger(comment=args.run_id, args=args, file_stream_log=True)
         logger.watch(
             network=network.module if args.ddp else network,
@@ -360,6 +362,9 @@ def main(local_rank, args):
         if not osp.exists(args.save_path):
             os.makedirs(args.save_path)
     print("network params are saved at {}".format(args.save_path))
+    
+    # save checker
+    save_checker = BestMetricSaveChecker(metric_name='PSNR')
 
     # start training
     with status_tracker:
@@ -377,6 +382,7 @@ def main(local_rank, args):
             logger=logger,
             resume_epochs=args.resume_ep or 1,
             ddp=args.ddp,
+            check_save_fn=save_checker,
             fp16=args.fp16,
             max_norm=args.max_norm,
             grad_accum_ep=args.grad_accum_ep,

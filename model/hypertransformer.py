@@ -831,12 +831,13 @@ class HyperTransformer(BaseModel):
 #         Initial Training         ####
 #######################################
 # We pre-train this model first and then train the above model with pre-trained weights
-class HyperTransformerPre(nn.Module):
+@register_model('hypertransformer_pre')
+class HyperTransformerPre(BaseModel):
     def __init__(self, config):
         super(HyperTransformerPre, self).__init__()
-        self.is_DHP_MS      = True #config["is_DHP_MS"]
-        self.in_channels    = 8 #config[config["train_dataset"]]["spectral_bands"]
-        self.out_channels   = 8 #config[config["train_dataset"]]["spectral_bands"]
+        self.is_DHP_MS      = False #config["is_DHP_MS"]
+        self.in_channels    = 31 #config[config["train_dataset"]]["spectral_bands"]
+        self.out_channels   = 31 #config[config["train_dataset"]]["spectral_bands"]
         self.factor         = 4 #config[config["train_dataset"]]["factor"]
 
         self.num_res_blocks = [16, 1, 1, 1, 4]
@@ -844,7 +845,7 @@ class HyperTransformerPre(nn.Module):
         self.res_scale      = 1
 
         self.LFE_HSI    = LFE(in_channels=self.in_channels)
-        self.LFE_PAN    = LFE(in_channels=1)
+        self.LFE_PAN    = LFE(in_channels=3)
         # Scaled dot product attention
         lv1_dim      = 16**2  #config[config["train_dataset"]]["LR_size"]**2
         lv2_dim      = 2*16**2  #(2*config[config["train_dataset"]]["LR_size"])**2
@@ -879,8 +880,24 @@ class HyperTransformerPre(nn.Module):
         ### FINAL ####
         ##############
         self.final_conv     = nn.Conv2d(in_channels=self.n_feats+int(self.n_feats/2)+int(self.n_feats/4), out_channels=self.out_channels, kernel_size=3, padding=1)
+        
+        
+        # simple hard-coded here
+        patch_merge = True
+        crop_batch_size = 32
+        scale = 4
+        patch_size_list = [16, 64, 64]
+        if patch_merge:
+            from model.base_model import PatchMergeModule
+            self._patch_merge_model = PatchMergeModule(
+                # net=self,
+                patch_merge_step=self.patch_merge_step,
+                crop_batch_size=crop_batch_size,
+                patch_size_list=patch_size_list,
+                scale=scale,
+            )
 
-    def forward(self, X_MS, X_PAN):
+    def _forward_implem(self, X_MS, X_PAN):
         with torch.no_grad():
             if not self.is_DHP_MS:
                 X_MS_UP = F.interpolate(X_MS, scale_factor=(self.factor,self.factor),mode ='bicubic')
@@ -889,7 +906,7 @@ class HyperTransformerPre(nn.Module):
                 X_MS_UP = X_MS
             
             # Generating PAN, and PAN (UD) images
-            X_PAN   = X_PAN.unsqueeze(dim=1)
+            # X_PAN   = X_PAN.unsqueeze(dim=1)
             PAN_D   = F.interpolate(X_PAN, scale_factor=(1/self.factor, 1/self.factor), mode ='bilinear')
             PAN_UD  = F.interpolate(PAN_D, scale_factor=(self.factor, self.factor), mode ='bilinear')
 
@@ -953,20 +970,46 @@ class HyperTransformerPre(nn.Module):
         #####################################
         #      Output                       #
         #####################################
-        output = { "pred": x}
-        return output
+        # output = { "pred": x}
+        return x
+    
+        
+    def train_step(self, ms, lms, pan, gt, criterion):
+        pred = self._forward_implem(ms, pan)
+        
+        # spatial_loss = criterion(pred, gt) + \
+        #     0.2 * criterion(x13, gt) + \
+        #     0.2 * criterion(x23, gt)
+            
+        # tp_loss = 0.05 * out['tp_loss']
+        
+        loss_d = criterion(pred, gt)
+        
+        return pred, loss_d
+    
+    def val_step(self, ms, lms, pan):
+        pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
+        
+        return pred
+    
+    def patch_merge_step(self, ms, lms, pan):
+        pred = self._forward_implem(ms, pan)
+        
+        return pred
     
     
 if __name__ == '__main__':
     from torch.cuda import memory_summary
     from fvcore.nn import FlopCountAnalysis, flop_count_table
     
-    net = HyperTransformer().cuda()
+    net = HyperTransformerPre().cuda()
 
-    ms = torch.randn(1, 31, 16, 16).cuda()
-    lms = torch.randn(1, 31, 16, 16).cuda()
-    pan = torch.randn(1, 3, 64, 64).cuda()
-    gt = torch.randn(1, 31, 64, 64).cuda()
+    img_size = 64
+    factor = 4
+    ms = torch.randn(1, 31, img_size, img_size).cuda()
+    lms = torch.randn(1, 31, img_size, img_size).cuda()
+    pan = torch.randn(1, 3, img_size*factor, img_size*factor).cuda()
+    gt = torch.randn(1, 31, img_size*factor, img_size*factor).cuda()
     
     # print(net(ms,pan)['pred'].shape)
     
@@ -975,13 +1018,13 @@ if __name__ == '__main__':
     # loss = nn.MSELoss()(sr, gt)
     # loss.backward()
     
-    # print(memory_summary())
+    print(memory_summary())
     
     # out = net(ms,pan)
     # for k,v in out.items():
     #     print(k,v.shape)
     
-    net.forward = net._forward_implem
-    print(
-        flop_count_table(FlopCountAnalysis(net, (ms, pan)))
-    )
+    # net.forward = net._forward_implem
+    # print(
+    #     flop_count_table(FlopCountAnalysis(net, (ms, pan)))
+    # )

@@ -91,6 +91,21 @@ class FusionNet(BaseModel):
 
 if __name__ == '__main__':
     fusionnet = FusionNet(8, 32)
-    x = torch.randn(1, 8, 64, 64)
-    y = torch.randn(1, 1, 64, 64)
+    x = torch.randn(1, 8, 256, 256)
+    y = torch.randn(1, 1, 256, 256)
     print(fusionnet(x, y).shape)
+    
+    import contextlib
+    import time
+    
+    @contextlib.contextmanager
+    def time_it(t=10):
+        t1 = time.time()
+        yield
+        t2 = time.time()
+        print('time: {:.3f}s'.format((t2 - t1)/t))
+    
+    tt = 10
+    with time_it(tt):
+        for _ in range(tt):
+            fusionnet(x, y)

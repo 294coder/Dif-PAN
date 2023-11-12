@@ -485,10 +485,25 @@ if __name__ == '__main__':
     # print memory usage in GB
     # print('Allocated:', round(memory_reserved(0)/1024**3, 1), 'GB')
     
-    model.forward = model._forward_implem
-    print(
-        flop_count_table(FlopCountAnalysis(model, (ms, lms, pan)))
-    )
+    import contextlib
+    import time
+    
+    @contextlib.contextmanager
+    def time_it(t=10):
+        t1 = time.time()
+        yield
+        t2 = time.time()
+        print('time: {:.3f}s'.format((t2 - t1)/t))
+        
+    tt = 10
+    with time_it(tt):
+        for _ in range(tt):
+            y = model.val_step(ms, lms, pan)
+    
+    # model.forward = model._forward_implem
+    # print(
+    #     flop_count_table(FlopCountAnalysis(model, (ms, lms, pan)))
+    # )
     
     # summaries(model, grad=True)
     

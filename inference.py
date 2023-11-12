@@ -25,14 +25,14 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:1"
+device = "cuda:0"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
 dataset_type = "cave"
 save_format = "mat"
 full_res = False
 split_patch = False
-patch_size = 128
+patch_size = 64
 ergas_ratio = 4
 patch_size_list = [patch_size // ergas_ratio, patch_size, patch_size]  # ms, lms, pan
 save_mat = True
@@ -42,6 +42,7 @@ loop_func = (
         hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8"],
         patch_size_list=patch_size_list,
         ergas_ratio=ergas_ratio,
+        prog=False,
         residual_exaggerate_ratio=5000,
     )
     if not full_res
@@ -51,7 +52,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "hyper_transformer"
+name = "lformer"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -103,6 +104,7 @@ print("=" * 50)
 # p = './weight/dcformer_1cnjadi6.pth'  # dcformer_mwsa wx 8 CAttn retrained
 # p = './weight/dcformer_a6it872k.pth'
 
+# p = './weight/lformer_wv3_ep_1000.pth'  # lformer
 
 # p = './weight/gppnn_104ji7i6.pth'  # gppnn
 # ========================================================
@@ -118,9 +120,9 @@ print("=" * 50)
 # p = './weight/dcformer_1dpmi7w6/ep_30.pth'  # dcformer_mwsa PSNR: 51.39 (r)
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer_mwsa wx 8 CAttn
 
-# p = './weight/lformer_29sq5or9.pth'  # lformer
+p = './weight/lformer_29sq5or9.pth'  # lformer
 
-p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
+# p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
@@ -237,12 +239,11 @@ p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
 
 if dataset_type == "wv3":
     if not full_res:
-        path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
-    else: 
-        # path = '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'  # old test set
-        path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
+        path = "/Data3/cao/ZiHanCao/datasets/pansharpening/wv3//reduced_examples/test_wv3_multiExm1.h5"
+    else:
+        path = "/Data3/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
 elif dataset_type == "cave":
-    path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+    path = "/Data3/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 elif dataset_type == "cave_x8":
     path = "/home/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 elif dataset_type == "harvard":
@@ -260,7 +261,7 @@ elif dataset_type == "gf":
         path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/gf/full_examples/test_gf2_OrigScale_multiExm1.h5'
-        path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
+        path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
 elif dataset_type == "qb":
     if not full_res:
         path = "/media/office-401-remote/Elements SE/cao//ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
@@ -271,8 +272,8 @@ elif dataset_type == "wv2":
     if not full_res:
         path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv2/reduced_examples/test_wv2_multiExm1.h5"
     else:
-        # path = '/home/ZiHanCao/datasets/pansharpening/wv2/full_examples/test_wv2_OrigScale_multiExm1.h5'
-        path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv2/full_examples/test_wv2_OrigScale_multiExm1.h5"
+        # path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv2/full_examples/test_wv2_OrigScale_multiExm1.h5"
+        path = '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv2_OrigScale_multiExm1.h5'
 elif dataset_type == 'roadscene':
     path = '/home/ZiHanCao/datasets/RoadSceneFusion_1'
 elif dataset_type == 'tno':
@@ -321,7 +322,7 @@ elif dataset_type == 'tno':
 else:
     raise NotImplementedError
 dl = data.DataLoader(ds, batch_size=dl_bs, shuffle=False)
-# -----------------------------------------------------
+# ----------------------------------------------------
 
 # -------------------inference-------------------------
 all_sr = loop_func(model, dl, device, crop_bs, split_patch=split_patch)
