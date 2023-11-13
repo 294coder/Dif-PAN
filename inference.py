@@ -42,7 +42,7 @@ loop_func = (
         hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8"],
         patch_size_list=patch_size_list,
         ergas_ratio=ergas_ratio,
-        prog=False,
+        prog=True,
         residual_exaggerate_ratio=5000,
     )
     if not full_res
@@ -52,7 +52,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "lformer"
+name = "hyper_transformer"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -120,9 +120,10 @@ print("=" * 50)
 # p = './weight/dcformer_1dpmi7w6/ep_30.pth'  # dcformer_mwsa PSNR: 51.39 (r)
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer_mwsa wx 8 CAttn
 
-p = './weight/lformer_29sq5or9.pth'  # lformer
+# p = './weight/lformer_29sq5or9.pth'  # lformer
 
 # p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
+p = './weight/hyper_transformer_r0p6psfx.pth'  # hyper_transformer
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80

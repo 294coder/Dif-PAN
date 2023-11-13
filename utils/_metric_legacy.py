@@ -343,7 +343,7 @@ def analysis_accu(img_base, img_out, ratio, flag_cut_bounds=True, dim_cut=1, cho
     mse = torch.mean(mse, 0)
     rmse = mse ** 0.5
     temp = torch.log(1 / rmse) / math.log(10)
-    PSNR = -20 * temp
+    PSNR = 20 * temp
 
     # 计算SSIM
     # img_base = img_base.permute(2, 0, 1)

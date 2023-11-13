@@ -48,11 +48,11 @@
 
 ## dcformer_mwsa arch
 python main.py --proj_name dcformer --arch hyper_transformer \
--b 16 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
+-b 24 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
 --loss 'l1ssim' --val_n_epoch 10 --comment '进行cave的测试 of hyper_transformer' \
 --ergas_ratio 4 \
---pretrain --pretrain_id '2pkcclsz'
+--pretrain --pretrain_id '1d24adgy'
 
 
 ## lformer arch

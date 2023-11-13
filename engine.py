@@ -8,7 +8,6 @@ import torch
 import torch.cuda.amp as amp
 import torch.distributed as dist
 import torch.nn as nn
-from torch_ema import ExponentialMovingAverage
 from torch.utils.data import DataLoader
 from contextlib import nullcontext
 
@@ -257,10 +256,12 @@ def train(
             params["lr_scheduler"] = lr_scheduler.state_dict()
             params["metrics"] = val_acc_dict
             if not args.save_every_eval:
-                if val_loss < optim_val_loss and is_main_process() or check_save_fn(val_acc_dict):
+                # TODO: find more straightforward way for managing the model saving
+                # if (val_loss < optim_val_loss or check_save_fn(val_acc_dict)) and is_main_process():
+                if check_save_fn(val_acc_dict) and is_main_process():
                     torch.save(params, save_path)
                     optim_val_loss = val_loss
-                    logger.print("save params")
+                    logger.print(f"save params, best metric {check_save_fn.metric_name}: {check_save_fn.best_metric}")
             else:
                 # TODO: 将同一个id的权重存在一个文件夹中，还需要考虑重新load训练的问题
                 p = os.path.join(save_path, f'ep_{ep}.pth')

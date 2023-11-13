@@ -119,6 +119,8 @@ class PatchMergeModule(nn.Module):
             patch_size_list
         ), "input @x_list should have the same length as @patch_size_list"
         for x, patch_size in zip(x_list, patch_size_list):
+            # torch.cuda.empty_cache()
+            
             b, c, h, w = x.size()
             x_size_list.append(x.size())
             # assert b == 3, 'batch size should be 1 when doing inference'
@@ -144,7 +146,7 @@ class PatchMergeModule(nn.Module):
                 .permute(2, 0, 1)
                 .contiguous()
             )
-            x_unfold = x_unfold.view(x_unfold.size(0), -1, c, h_padsize, w_padsize)
+            x_unfold = x_unfold.reshape(x_unfold.size(0), -1, c, h_padsize, w_padsize)
             x_unfold_list.append(x_unfold)
             x_range_list.append(
                 x_unfold.size(0) // batchsize + (x_unfold.size(0) % batchsize != 0)
@@ -164,7 +166,7 @@ class PatchMergeModule(nn.Module):
         ).cpu()  # y_hw_cut[:, [29, 19, 9]]
 
         x_hw_cut_list.clear()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         # for x, h_padsize, w_padsize, h_cut, w_cut, hshave, wshave in zip(x_list, h_padsize_list, w_padsize_list, h_cut_list, w_cut_list, hshave_list, wshave_list):
         #     b, c, h, w = x.size()
@@ -193,7 +195,7 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_h_cut_list.clear()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         y_w_cut = self.cut_w(
             x_w_cut_list,
@@ -207,7 +209,7 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_w_cut_list.clear()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         # self.axes[0][0].imshow(y_h_cut[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
         ################################################
@@ -237,14 +239,14 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_h_top_list.clear(), x_w_top_list.clear()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         # self.axes[0][1].imshow(y_h_top[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
         ################################################
         # img->patch，最大计算crop_s个patch，防止bs*p*p太大
         ################################################
 
-        # x_unfold = x_unfold.view(x_unfold.size(0), -1, c, h_padsize, w_padsize)
+        # x_unfold = x_unfold.reshape(x_unfold.size(0), -1, c, h_padsize, w_padsize)
 
         # x_range = x_unfold.size(0) // batchsize + (x_unfold.size(0) % batchsize != 0)
         # x_unfold = x_unfold.to(device)
@@ -271,7 +273,7 @@ class PatchMergeModule(nn.Module):
                 ],
                 **kwargs,
             )
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
             y_unfold.append(res)
 
         if isinstance(y_unfold[0], tuple):
@@ -300,7 +302,7 @@ class PatchMergeModule(nn.Module):
             s_unfold = torch.cat(s_unfold, dim=0).cpu()
 
             y = F.fold(
-                s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
+                s_unfold.reshape(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
                 ((h - h_cut) * scale, (w - w_cut) * scale),
                 (h_padsize * scale, w_padsize * scale),
                 stride=(int(hshave / 2 * scale), int(wshave / 2 * scale)),
@@ -322,7 +324,7 @@ class PatchMergeModule(nn.Module):
             ].contiguous()
 
             s_inter = F.fold(
-                s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
+                s_unfold.reshape(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
                 ((h - h_cut - hshave) * scale, (w - w_cut - wshave) * scale),
                 (
                     h_padsize * scale - hshave * scale,
@@ -417,7 +419,7 @@ class PatchMergeModule(nn.Module):
                 .permute(2, 0, 1)
                 .contiguous()
             )  # transpose(0, 2)
-            x_h_cut_unfold = x_h_cut_unfold.view(
+            x_h_cut_unfold = x_h_cut_unfold.reshape(
                 x_h_cut_unfold.size(0), -1, c, *padsize_list[idx]
             )  # x_h_cut_unfold.size(0), -1, padsize, padsize
             x_h_cut_unfold_list.append(x_h_cut_unfold)
@@ -460,7 +462,7 @@ class PatchMergeModule(nn.Module):
             # nH*nW, c, k, k: 3, 3, 100, 100 (17, 3, 30, 120)
             # out_size=(30, 600), k=(30, 120)
             s_h_cut = F.fold(
-                s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1)
+                s_h_cut_unfold.reshape(s_h_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 (padsize[0] * scale, (w - w_cut) * scale),
@@ -476,7 +478,7 @@ class PatchMergeModule(nn.Module):
             # 17, 3, 30, 60
             # out_size=(30, 540), k=(30, 90)
             s_h_cut_inter = F.fold(
-                s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1)
+                s_h_cut_unfold.reshape(s_h_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 (padsize[0] * scale, (w - w_cut - shave[1]) * scale),
@@ -533,7 +535,7 @@ class PatchMergeModule(nn.Module):
                 .contiguous()
             )
 
-            x_w_cut_unfold = x_w_cut_unfold.view(
+            x_w_cut_unfold = x_w_cut_unfold.reshape(
                 x_w_cut_unfold.size(0), -1, c, *padsize_list[idx]
             )
             x_range = x_w_cut_unfold.size(0) // batchsize + (
@@ -569,7 +571,7 @@ class PatchMergeModule(nn.Module):
                 ],
                 **kwargs,
             )
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
             y_w_cut_unfold.append(res)
 
         if isinstance(y_w_cut_unfold[0], tuple):
@@ -592,7 +594,7 @@ class PatchMergeModule(nn.Module):
             # 109,3,30,120
             # out_size=(786, 120), k=(30, 120)
             s_w_cut = F.fold(
-                s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1)
+                s_w_cut_unfold.reshape(s_w_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 ((h - h_cut) * scale, padsize[1] * scale),
@@ -608,7 +610,7 @@ class PatchMergeModule(nn.Module):
             # 109, 3, 16, 120
             # out_size=(771, 120), k=(15, 120)
             s_w_cut_inter = F.fold(
-                s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1)
+                s_w_cut_unfold.reshape(s_w_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 ((h - h_cut - shave[0]) * scale, padsize[1] * scale),

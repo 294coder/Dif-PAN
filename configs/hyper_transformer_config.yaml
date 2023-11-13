@@ -1,6 +1,6 @@
 optimizer:
-  name: 'adamw'
-  lr: !!float 1e-4
+  name: 'adam'
+  lr: !!float 1e-5
   weight_decay: !!float 1e-6
 
 lr_scheduler:
