@@ -219,14 +219,14 @@ if __name__ == '__main__':
     with torch.inference_mode():
         net = PatchMergeModule(net, crop_batch_size=12, patch_size_list=[16, 64, 64])
         net.forward_chop(ms, pan, pan)
-    t1 = time.time()
-    
-    print('===> testing time...')
-    t1 = time.time()
-    for _ in range(5):
-        net.forward_chop(ms, pan, pan)
+        t1 = time.time()
         
-    print(f'===> test time {(time.time()-t1) / 5}')
+        print('===> testing time...')
+        t1 = time.time()
+        for _ in range(5):
+            net.forward_chop(ms, pan, pan)
+        
+        print(f'===> test time {(time.time()-t1) / 5}')
     
     
     
