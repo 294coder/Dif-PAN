@@ -1,4 +1,4 @@
-<p style="text-align:center;font-size:50px;"><b>DDIF</b>: Diffusion model with disentangled modulations for sharpening multispectral and hyperspectral images</p>
+# DDIF: Diffusion model with disentangled modulations for sharpening multispectral and hyperspectral images
 
 <div style="text-align: center;">
   <a href="https://www.arxiv.org/">
@@ -21,7 +21,7 @@
 
 News:
 
-- 2023/12/4：**Code RELEASED!**:happy:
+- 2023/12/4：**Code RELEASED!**:fire: 
 
 - 2023/11/23: **Code will be released soon!**:fire: 
 
@@ -33,20 +33,21 @@ The code in this repo supports Pansharpening, Hyperspectral and multispectral im
 <td><img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232300466.png" border=0></td>
 <td><img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232301434.png" border=0></td>
 </tr></table>
+
 # Instructions
 
 ## Dataset
 
-You can find the Pansharpening dataset of [WV3, GF2, and QB](https://github.com/liangjiandeng/PanCollection) in this office repo.
+In this office repo, you can find the Pansharpening dataset of [WV3, GF2, and QB](https://github.com/liangjiandeng/PanCollection).
 
-We follows the [PSRT](https://ieeexplore.ieee.org/document/10044141) to implement Hyperspectral and multispectral image fusion. You can find the data we use in [this repo](https://github.com/shangqideng/PSRT).
+We follow the [PSRT](https://ieeexplore.ieee.org/document/10044141) to implement Hyperspectral and multispectral image fusion. You can find the data we use in [this repo](https://github.com/shangqideng/PSRT).
 
 Other instructions will come soon!
 
 
 ## Citation
 
-If you find our paper is useful, please consider to cite:
+If you find our paper useful, please consider citing the following:
 
 ```tex
 @article{DDIF,
