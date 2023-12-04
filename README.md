@@ -1,13 +1,15 @@
-# DDIF
+<p style="text-align:center;font-size:50px;"><b>DDIF</b>: Diffusion model with disentangled modulations for sharpening multispectral and hyperspectral images</p>
+
 <div style="text-align: center;">
   <a href="https://www.arxiv.org/">
     <img src="https://img.shields.io/badge/arXiv-red.svg?style=flat" alt="ArXiv">
   </a>
-    <a href="https://arxiv.org/abs/2304.04774">paper</a>
+    <a href="https://arxiv.org/abs/2304.04774">Arxiv</a>
+    <img class="gh-logo" src="https://sciencedirect.elseviercdn.cn/shared-assets/24/images/elsevier-non-solus-new-grey.svg" alt="Elsevier logo" height="48" width="54">
+    <a href="https://www.sciencedirect.com/science/article/abs/pii/S1566253523004748">Information Fusion
+    </a>
 </div>
-**Official repository of "Diffusion model with disentangled modulations for sharpening multispectral and hyperspectral images".**
-
-<div style="text-align: center;">
+<p style="text-align: center; font-family: 'Times New Roman';">
   </a>
     Abstract:
     The denoising diffusion model has received increasing attention in the field of image generation in recent years, thanks to its powerful generation capability. However, diffusion models should be deeply investigated in the field of multi-source image fusion, such as remote sensing pansharpening and multispectral and hyperspectral image fusion (MHIF). 
@@ -15,28 +17,48 @@
     These modules mainly consist of a coarse-grained style modulation (CSM) and a fine-grained wavelet modulation (FWM), which aim to disentangle coarse-grained style information and fine-grained frequency information, respectively, thereby generating competitive fused images. Moreover, some essential strategies for the training of the given diffusion model are well discussed, e.g., the selection of training objectives. 
     The superiority of the proposed method is verified compared with recent state-of-the-art (SOTA) techniques by extensive experiments on two multi-source image fusion benchmarks, i.e., pansharpening and MHIF. In addition, sufficient discussions and ablation studies in the experiments are involved to demonstrate the effectiveness of our approach. 
 </a>
-</div>
+</p>
+
 News:
+
+- 2023/12/4：**Code RELEASED!**:happy:
 
 - 2023/11/23: **Code will be released soon!**:fire: 
 
-
 ## Quick Overview
 
-<img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232300466.png" alt="image-20231123230021337" style="zoom: 50%;" />
+The code in this repo supports Pansharpening, Hyperspectral and multispectral image fusion.
 
-<img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232301434.png" alt="image-20231123230102164" style="zoom: 46%;" />
+<table><tr>
+<td><img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232300466.png" border=0></td>
+<td><img src="https://raw.githubusercontent.com/294coder/blog_img_bed/main/img3/202311232301434.png" border=0></td>
+</tr></table>
+# Instructions
+
+## Dataset
+
+You can find the Pansharpening dataset of [WV3, GF2, and QB](https://github.com/liangjiandeng/PanCollection) in this office repo.
+
+We follows the [PSRT](https://ieeexplore.ieee.org/document/10044141) to implement Hyperspectral and multispectral image fusion. You can find the data we use in [this repo](https://github.com/shangqideng/PSRT).
+
+Other instructions will come soon!
+
 
 ## Citation
 
 If you find our paper is useful, please consider to cite:
 
 ```tex
-@article{cao2023ddrf,
-  title={Ddrf: Denoising diffusion model for remote sensing image fusion},
-  author={Cao, ZiHan and Cao, ShiQi and Wu, Xiao and Hou, JunMing and Ran, Ran and Deng, Liang-Jian},
-  journal={arXiv preprint arXiv:2304.04774},
-  year={2023}
+@article{DDIF,
+title = {Diffusion model with disentangled modulations for sharpening multispectral and hyperspectral images},
+journal = {Information Fusion},
+volume = {104},
+pages = {102158},
+year = {2024},
+issn = {1566-2535},
+doi = {https://doi.org/10.1016/j.inffus.2023.102158},
+url = {https://www.sciencedirect.com/science/article/pii/S1566253523004748},
+author = {Zihan Cao and Shiqi Cao and Liang-Jian Deng and Xiao Wu and Junming Hou and Gemine Vivone},
 }
 ```
 
