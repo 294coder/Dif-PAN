@@ -52,7 +52,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "hyper_transformer"
+name = "lformer"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -120,10 +120,10 @@ print("=" * 50)
 # p = './weight/dcformer_1dpmi7w6/ep_30.pth'  # dcformer_mwsa PSNR: 51.39 (r)
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer_mwsa wx 8 CAttn
 
-# p = './weight/lformer_29sq5or9.pth'  # lformer
+p = './weight/lformer_29sq5or9.pth'  # lformer
 
 # p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
-p = './weight/hyper_transformer_r0p6psfx.pth'  # hyper_transformer
+# p = './weight/hyper_transformer_r0p6psfx.pth'  # hyper_transformer
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
@@ -185,6 +185,8 @@ p = './weight/hyper_transformer_r0p6psfx.pth'  # hyper_transformer
 
 # p = './weight/gppnn_3dghlzjy.pth'  # gppnn
 # p = './weight/mmnet_gr6zqyvi.pth'  # mmnet
+
+# p = './weight/lformer_gf2_ep_1000.pth'  # lformer
 # =================================================
 
 # ===============QB checkpoint=====================
@@ -259,10 +261,10 @@ elif dataset_type == 'botswana':
     path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
 elif dataset_type == "gf":
     if not full_res:
-        path = "/media/office-401/Elements SE/cao//ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+        path = "/Data3/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/gf/full_examples/test_gf2_OrigScale_multiExm1.h5'
-        path = "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
+        path = "/Data3/cao/ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
 elif dataset_type == "qb":
     if not full_res:
         path = "/media/office-401-remote/Elements SE/cao//ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
@@ -299,7 +301,7 @@ params = torch.load(p, map_location=device)
 #    odict['module.' + k] = v
 
 
-model.load_state_dict(params["model"])
+model.load_state_dict(params['model'])
 # model.load_state_dict(params["state_dict"])
 model = model.to(device)
 model.eval()

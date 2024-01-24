@@ -47,12 +47,12 @@
 #  --pretrain --pretrain_id '2oy4iqpj'
 
 ## dcformer_mwsa arch
-python main.py --proj_name dcformer --arch hyper_transformer \
--b 24 --device 'cuda:0' --dataset 'hisi' --logger_on --log_metrics \
+python main.py --proj_name lformer --arch lformer_cvpr_flatten_transformer \
+-b 32 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
---loss 'l1ssim' --val_n_epoch 10 --comment '进行cave的测试 of hyper_transformer' \
+--loss 'l1ssim' --val_n_epoch 10 --comment 'cvpr rebuttal lformer_cvpr_flatten_transformer' \
 --ergas_ratio 4 \
---pretrain --pretrain_id '1d24adgy'
+# --pretrain --pretrain_id '1d24adgy'
 
 
 ## lformer arch

@@ -242,8 +242,7 @@ def yaml_load(name, base_path="./configs"):
         cont = f.read()
         return yaml.load(cont, Loader=yaml.FullLoader)
     else:
-        print("configuration file not exists")
-        raise FileNotFoundError
+        raise FileNotFoundError("configuration file not exists with path {}".format(path))
 
 
 def json_load(name, base_path="./configs"):

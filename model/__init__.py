@@ -29,9 +29,12 @@ from model.PANNet import VanillaPANNet
 # from model.pmacnet import PMACNet
 
 from model.LFormer import AttnFuseMain
+from model.LFormer_cvpr_re import AttnFuseMain
+
+
 # from model.gppnn_cvpr import GPPNN
-from model.hypertransformer import HyperTransformer
-from model.hypertransformer import HyperTransformerPre
+# from model.hypertransformer import HyperTransformer
+# from model.hypertransformer import HyperTransformerPre
 
 # ablation
 # from model.dcformer_abla_only_channel_attn import DCFormer_XCA
@@ -42,7 +45,7 @@ from model.hypertransformer import HyperTransformerPre
 # from model.dcformer_disscuss_mog_fusion_head import DCFormerMWSAMoGFusionHead
 
 # others
-from model.GPPNN import GPPNN
+# from model.GPPNN import GPPNN
 
 # import os
 # import importlib

@@ -60,6 +60,7 @@ def get_args():
             "gppnn_cvpr",
             "hyper_transformer",
             "hypertransformer_pre",
+            "lformer_cvpr_flatten_transformer"
         ],
     )
     parser.add_argument(

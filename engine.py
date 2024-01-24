@@ -51,7 +51,9 @@ def val(
     else:
         analysis = NonAnalysis()
     val_loss_dict = {}
-    for i, (pan, ms, lms, gt) in enumerate(val_dl, 1):
+    
+    from tqdm import tqdm
+    for i, (pan, ms, lms, gt) in tqdm(enumerate(val_dl, 1), total=len(val_dl), disable=not is_main_process()):
         pan = pan.cuda().float()
         ms = ms.cuda().float()
         lms = lms.cuda().float()
@@ -73,62 +75,67 @@ def val(
     val_loss_dict = ave_ep_loss(val_loss_dict, i)
     if args.ddp:
         if args.log_metrics:
-            _gathered_analysis: Union[List[AnalysisPanAcc], List[None]] = [
-                None for _ in range(args.world_size)
-            ]
-            dist.gather_object(analysis, _gathered_analysis if is_main_process() else None)
+            gathered_analysis = [None for _ in range(args.world_size)]
+            dist.all_gather_object(gathered_analysis, analysis)
 
         gathered_val_dict = [None for _ in range(args.world_size)]
-        dist.gather_object(val_loss_dict, gathered_val_dict if is_main_process() else None)
+        dist.all_gather_object(gathered_val_dict, val_loss_dict)
         val_loss_dict = ave_multi_rank_dict(gathered_val_dict)
 
-    acc_ave = analysis.acc_ave
-    if is_main_process():
-        # TODO: support different metrics
-        if args.ddp and args.log_metrics:
-            n = 0
-            acc = {}  # {"SAM": 0.0, "ERGAS": 0.0, "PSNR": 0.0, "CC": 0.0, "SSIM": 0.0}
-            for analysis in _gathered_analysis:
-                for k, v in analysis.acc_ave.items():
+    acc_ave = analysis.acc_ave  # default for one process
+    
+    if args.ddp and args.log_metrics:
+        n = 0
+        acc = {}  # {"SAM": 0.0, "ERGAS": 0.0, "PSNR": 0.0, "CC": 0.0, "SSIM": 0.0}
+        for analysis in gathered_analysis:
+            _acc_ave = analysis.acc_ave
+            for k, v in _acc_ave.items():
+                if k not in acc:
+                    acc[k] = v * analysis._call_n
+                else:
                     acc[k] += v * analysis._call_n
-                n += analysis._call_n
-            for k, v in acc.items():
-                acc[k] = v / n
-            acc_ave = acc
-        if logger is not None:
-            # log validate curves
-            if args.log_metrics:
-                logger.log_curves(prefixed_dict_key(acc_ave, "val"), ep)
-            logger.log_curve(val_loss / i, "val_loss", ep)
-            for k, v in val_loss_dict.items():
-                logger.log_curve(v, f'val_{k}', ep)
+            n += analysis._call_n
+        for k, v in acc.items():
+            acc[k] = v / n
+        acc_ave = acc
+            
+    if is_main_process() and logger is not None:  # on logger is not None
+        # log validate curves
+        if args.log_metrics:
+            logger.log_curves(prefixed_dict_key(acc_ave, "val"), ep)
+        logger.log_curve(val_loss / i, "val_loss", ep)
+        for k, v in val_loss_dict.items():
+            logger.log_curve(v, f'val_{k}', ep)
 
-            # log validate image(last batch)
-            if args.dataset not in ["hisi", 'far']:
-                if gt.shape[0] > 8:
-                    func = lambda x: x[:8, ...]
-                    gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
-                residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
-                _inc = sr.shape[1]  # wv3: 8, qb: 4, gf: 4
-                logged_img = torch.cat(
-                    [
-                        lms,
-                        pan.repeat(1, _inc, 1, 1),
-                        sr,
-                        residual_image.repeat(1, _inc, 1, 1),
-                    ],
-                    dim=0,
-                )  # [3*b, c, h, w]
-                logged_img = einops.rearrange(
-                    logged_img, "(n k) c h w -> (k n) c h w", n=4
-                )
-                logger.log_images(logged_img, 4, "lms_pan_sr_res", ep)
-
-            # print out eval information
-            logger.print(
-                ep_loss_dict2str(val_loss_dict),
-                f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
+        # log validate image(last batch)
+        if args.dataset not in ["hisi", 'far']:
+            if gt.shape[0] > 8:
+                func = lambda x: x[:8, ...]
+                gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
+            residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
+            _inc = sr.shape[1]  # wv3: 8, qb: 4, gf: 4
+            logged_img = torch.cat(
+                [
+                    lms,
+                    pan.repeat(1, _inc, 1, 1),
+                    sr,
+                    residual_image.repeat(1, _inc, 1, 1),
+                ],
+                dim=0,
+            )  # [3*b, c, h, w]
+            logged_img = einops.rearrange(
+                logged_img, "(n k) c h w -> (k n) c h w", n=4
             )
+            logger.log_images(logged_img, 4, "lms_pan_sr_res", ep)
+
+        # print out eval information
+        logger.print(
+            ep_loss_dict2str(val_loss_dict),
+            f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
+        )
+    
+    if args.ddp:
+        dist.barrier()
     return (
         acc_ave,
         val_loss / i,
@@ -277,7 +284,7 @@ def train(
         if ddp:
             dist.reduce(ep_loss, 0)
             ep_loss_ranks_dict = [None for _ in range(world_size)]
-            dist.gather_object(ep_loss_dict, ep_loss_ranks_dict if is_main_process() else None, 0)
+            dist.all_gather_object(ep_loss_ranks_dict, ep_loss_dict)
             ep_loss_dict = ave_multi_rank_dict(ep_loss_ranks_dict)
 
         if logger is not None and ddp:

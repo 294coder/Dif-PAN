@@ -8,6 +8,10 @@
 		},
 		{
 			"path": "../../../cavex4"
+		},
+		{
+			"path": "/Data3/cao/ZiHanCao/exps/TSP/panformer/",
+			"name": "panformer-2"
 		}
 	],
 	"settings": {
