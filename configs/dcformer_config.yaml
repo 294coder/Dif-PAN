@@ -93,22 +93,22 @@ network_configs:
 
   dcformer_mwsa_new:
     spatial_size: 64
-    spectral_num: 31
-    added_c: 3
+    spectral_num: 8
+    added_c: 1
     mode: "C"
     channel_list: [48, [48, 96], [48, 96, 192]] #[32, [32, 56], [32, 56, 72]] #[8, [8, 16], [8, 16, 24]]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 12], [8, 12, 12]] # [ 8,[ 8,8 ],[ 8,8,8 ] ] #[4, [ 4, 4], [ 8, 8, 8 ]]
+    num_heads: [ 8,[ 8,8 ],[ 8,8,8 ] ] #[8, [8, 12], [8, 12, 12]] # [ 8,[ 8,8 ],[ 8,8,8 ] ] #[4, [ 4, 4], [ 8, 8, 8 ]]
     mlp_ratio: [2, [2, 2], [2, 2, 2]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[1, [ 1, 1 ], [ 1, 1, 1]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ]
-    block_list: [2, [2, 2], [2, 2, 2]] # [ 1,[ 1,1 ],[ 1,1,1 ] ] # [ 2,[ 2,2 ],[ 2,2,2 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
+    block_list:  [ 1,[ 1,1 ],[ 1,1,1 ] ] #[2, [2, 2], [2, 2, 2]] # [ 1,[ 1,1 ],[ 1,1,1 ] ] # [ 2,[ 2,2 ],[ 2,2,2 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [16, 64, 128, 128] #[64, 64, 32, 8]
-    scale: 8
+    patch_size_list: [16,32,64,64] #[16, 64, 128, 128] #[64, 64, 32, 8]
+    scale: 4
     residual: True # vis-ir_RS
     # for harvard x8
     attn_drop: 0.2
     drop_path: 0.2
-    crop_batch_size: 8
+    crop_batch_size: 4
 
   dcformer_reduce_c32:
     spectral_num: 31

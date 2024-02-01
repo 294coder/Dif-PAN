@@ -24,13 +24,13 @@ path:
   val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
 network_configs:
-  n_iter: 8
+  n_iter: 6
   h_nc: 64
-  in_c: 5
-  out_c: 4
+  in_c: 9
+  out_c: 8
   m_c: 3
   nc: [80, 160, 320]
-  nb: 2
+  nb: 1
   act_mode: "R"
   downsample_mode: "strideconv"
   upsample_mode: "convtranspose"

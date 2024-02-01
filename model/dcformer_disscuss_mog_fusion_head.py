@@ -1,4 +1,5 @@
 # from model.dcformer_mwsa import DCFormerMWSA
+from sympy import false
 from model.dcformer_mwsa_wx import DCFormerMWSA
 from model.module.MoGFusionHead import MoGFusionHead as FusionHeadWarpper
 from model.base_model import BaseModel, register_model, PatchMergeModule
@@ -129,10 +130,13 @@ class DCFormerMWSAMoGFusionHead(DCFormerMWSA):
 
 
 if __name__ == "__main__":
-    ms = torch.randn(1, 31, 128, 128).cuda(1)
-    mms = torch.randn(1, 31, 256, 256).cuda(1)
-    lms = torch.randn(1, 31, 512, 512).cuda(1)
-    pan = torch.randn(1, 3, 512, 512).cuda(1)
+    
+    device = torch.device('cuda:1')
+    
+    ms = torch.randn(1, 31, 16, 16).to(device)  # .cuda()
+    mms = torch.randn(1, 31, 32, 32).to(device)  # .cuda()
+    lms = torch.randn(1, 31, 64, 64).to(device)  # .cuda()
+    pan = torch.randn(1, 3, 64, 64).to(device)  # .cuda()
 
     # net = DCFormerMWSAMoGFusionHead(31, "C", added_c=3, block_list=[4, [4, 3], [4, 3, 2]]).cuda()
     net = DCFormerMWSAMoGFusionHead(
@@ -147,7 +151,7 @@ if __name__ == "__main__":
         drop_path=0.0,
         block_list=[1, [1, 1], [1, 1, 1]],
         norm_type="ln",
-        patch_merge_step=True,
+        patch_merge_step=false,
         patch_size_list=[
             16,
             32,
@@ -156,6 +160,14 @@ if __name__ == "__main__":
         ],  # [32, 128, 256, 256],  # [200, 200, 100, 25],
         scale=4,
         crop_batch_size=18,
-    ).cuda(1)
+        pretrain_path=None,
+    ).to(device)
+    
+    net._set_window_dict({64: 16, 32: 8, 16: 4})
 
-    print(net.val_step(ms, lms, pan).shape)
+    # print(net.val_step(ms, lms, pan).shape)
+    
+    net.forward = net._forward_implem
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
+
+    print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))

@@ -343,7 +343,7 @@ class Z_SubNet(nn.Module):
         self.RmT_conv = conv(m_c, out_c, bias=False, mode='1')
 
     def forward(self, x, Y_h, Y_m, mu, lamda_m):
-        rate_h, rate_m  = x.shape[2]//Y_h.shape[2], x.shape[2]//Y_m.shape[2] 
+        rate_h, rate_m  = x.shape[2]//Y_h.shape[2], x.shape[2]//Y_m.shape[2]
 
         XS1         = F.interpolate(x        , scale_factor = 1.0/rate_h , mode ='bilinear')  
         Diff_S1T    = F.interpolate((XS1-Y_h), scale_factor = rate_h     , mode ='bilinear')  
@@ -452,7 +452,9 @@ class H_hyperNet(nn.Module):
         return x
     
 if __name__ == '__main__':
-    device = 'cpu'
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
+    
+    device = 'cuda:0'
     
     net = fusionnet(
         n_iter=5,
@@ -469,18 +471,31 @@ if __name__ == '__main__':
     
     lr_hsi = torch.randn(1, 8, 16, 16).to(device)
     hr_msi = torch.randn(1, 1, 32, 32).to(device)
-    pan = torch.randn(1, 1, 64, 64)
+    pan = torch.randn(1, 1, 64, 64).to(device)
     
     lamda_m = 0.01  
     lamda_p = 0.01  
     lamda_m = torch.tensor(lamda_m).float().view([1, 1, 1, 1])
-    lamda_p = torch.tensor(lamda_p).float().view([1, 1, 1, 1])  
-    [lamda_m, lamda_p] = [el.to(device) for el in [lamda_m, lamda_p]] 
+    lamda_p = torch.tensor(lamda_p).float().view([1, 1, 1, 1])
+    [lamda_m, lamda_p] = [el.to(device) for el in [lamda_m, lamda_p]]
     
     
-    net.forward = net._forward_implem
+    num_p = 0
+    for p in net.parameters():
+        num_p += p.numel()
+        
+    print(num_p / 1000_000)
     
-    print(net(lr_hsi, hr_msi, pan, lamda_m, lamda_p).shape)
     
+    # net.forward = net._forward_implem
+    
+    # print(net(lr_hsi, hr_msi, pan, lamda_m, lamda_p).shape)
+    
+    # print(flop_count_table(
+    #     FlopCountAnalysis(
+    #         net,
+    #         (lr_hsi, hr_msi, pan, lamda_m, lamda_p)
+    # ))
+    # )
 
     

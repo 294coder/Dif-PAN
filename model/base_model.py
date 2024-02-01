@@ -642,16 +642,19 @@ class PatchMergeModule(nn.Module):
 
 # base model class
 # all model defination should inherit this class
-class BaseModel(nn.Module):
+from abc import ABC, abstractmethod
+class BaseModel(ABC, nn.Module):
     def __init__(self, **kwargs):
         super(BaseModel, self).__init__(**kwargs)
         pass
-
+    
+    @abstractmethod
     def train_step(
         self, ms, lms, pan, gt, criterion
     ) -> Union[Tuple[torch.Tensor], Tuple[Tensor, dict]]:
         raise NotImplementedError
 
+    @abstractmethod
     def val_step(self, ms, lms, pan) -> torch.Tensor:
         raise NotImplementedError
 
@@ -669,6 +672,7 @@ class BaseModel(nn.Module):
         else:
             raise NotImplementedError
 
+    @abstractmethod
     def _forward_implem(self, *args, **kwargs):
         raise NotImplementedError
 

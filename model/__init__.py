@@ -47,6 +47,8 @@ from model.ablation_exps.dcformer_abla_in_scale_MWSA import DCFormerMWSA
 from model.dcformer_disscuss_mog_fusion_head import DCFormerMWSAMoGFusionHead
 from model.dcformer_dissucss_multisource_proj import DCFormerMWSAMultiSourceProj
 
+from model.panRWKV import ConditionalNAFNet
+
 # others
 # from model.GPPNN import GPPNN
 

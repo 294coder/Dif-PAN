@@ -24,12 +24,11 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:1"
+device = "cuda:2"
 torch.cuda.set_device(device)
-# path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "qb"
+dataset_type = "wv2"
 save_format = "mat"
-full_res = True
+full_res = False
 split_patch = False
 patch_size = 1000
 ergas_ratio = 4
@@ -39,7 +38,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = True
+save_mat = False
 loop_func = (
     partial(
         ref_for_loop,
@@ -55,8 +54,8 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "hpmnet"
-subarch = ""
+name = "dcformer"
+subarch = "mwsa_new"
 dl_bs = 1
 crop_bs = 2
 
@@ -102,7 +101,7 @@ print("=" * 50)
 
 # p = './weight/dcformer_1g9ljhul.pth'  # dcformer_mwsa wx 8 CAttn
 
-p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
+# p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 # ========================================================
 
 # ================HISI CAVE checkpoint=============
@@ -127,6 +126,8 @@ p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 
 # p = "./weight/dcformer_3e77ot3s.pth"  # dcformer new arch wx c_attn legacy
 # p = './weight/dcformer_1gx5sc1l.pth'  # dcformer 8 CAttn
+
+# p = './weight/dcformer_2hwz3dgf.pth'
 
 ##### harvard_x8
 # p = "./weight/dcformer_zeavxkwx.pth"  # dcformer_mwsa ghost module
@@ -165,6 +166,8 @@ p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 
 # p = './weight/mmnet_frw0mwwn.pth'  # mmnet
 # p = './weight/pmacnet_y2k8paq1.pth'  # pmacnet
+
+# p = './weight/hpmnet_2re44fdd/ep_600.pth'
 # =================================================
 
 # ===============QB checkpoint=====================
@@ -179,7 +182,7 @@ p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 
 # p = './weight/pannet_3knmo9wy.pth'  # pannet
 
-p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
+# p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
 # =================================================
 
 # ==============FLIR checkpoint===================

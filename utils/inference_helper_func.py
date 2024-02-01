@@ -77,7 +77,7 @@ def ref_for_loop(model,
                  **patch_merge_module_kwargs):
     analysis = AnalysisPanAcc(ergas_ratio)
     all_sr = []
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=math.floor(dl.dataset.__len__() / dl.batch_size))
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
     if split_patch:
         # assert bs == 1, 'batch size should be 1'

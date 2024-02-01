@@ -214,9 +214,16 @@ if __name__ == '__main__':
     
     device = 'cuda:0'
 
-    net = MainNet(150, 4).to(device)
-    ms = torch.randn(1, 150, 40, 40).to(device)
-    pan = torch.randn(1, 4, 80, 80).to(device)
+    net = MainNet(31, 3).to(device)
+    ms = torch.randn(1, 31, 128, 128).to(device)
+    pan = torch.randn(1, 4, 512, 512).to(device)
+    
+    with torch.no_grad():
+        import time
+        t1 = time.time()
+        for _ in range(10):
+            sr = net(ms, pan)
+    
     print(net._forward_implem(ms, pan)[0].shape)
     
     print(tcd.memory_summary())

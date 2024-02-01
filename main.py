@@ -61,6 +61,7 @@ def get_args():
             "hsrnet",
             "restfnet",
             "hpmnet",
+            "panRWKV",
         ],
     )
     parser.add_argument(
@@ -184,13 +185,14 @@ def main(local_rank, args):
         if args.sub_arch is not None
         else args.network_configs.to_dict()
     )
-    network = build_network(full_arch, **network_configs)
+    network = build_network(full_arch, **network_configs).cuda()
+    # network = torch.compile(network)
 
     # parallel or not
     assert not (args.dp and args.ddp), "dp and ddp can not be True at the same time"
     if args.dp:
         network = nn.DataParallel(
-            network.cuda(), list(range(torch.cuda.device_count())), 0
+            network, list(range(torch.cuda.device_count())), 0
         )
     elif args.ddp:
         dist.init_process_group(

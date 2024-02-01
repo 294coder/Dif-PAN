@@ -1594,19 +1594,19 @@ if __name__ == "__main__":
 
     # from model.module.attention import MultiScaleWindowCrossAttention
 
-    # torch.cuda.set_device('cuda:1')
+    device = torch.device('cuda:1')
 
-    net = DCFormerMWSA(
+    net = DCFormerMWSAMultiSourceProj(
         64,
         31,
         "C",
         added_c=3,
-        channel_list=(32, (32, 48), (32, 48, 64)),
+        channel_list=(48, (48, 96), (48, 96, 192)),
         num_heads=(8, (8, 8), (8, 8, 8)),
         mlp_ratio=(2, (2, 2), (2, 2, 2)),
         attn_drop=0.0,
         drop_path=0.0,
-        block_list=[6, [6, 6], [6, 6, 6]],
+        block_list=[1, [1, 1], [1, 1, 1]],
         norm_type="ln",
         patch_merge_step=False,
         patch_size_list=[
@@ -1617,7 +1617,7 @@ if __name__ == "__main__":
         ],  # [32, 128, 256, 256],  # [200, 200, 100, 25],
         scale=4,
         crop_batch_size=2,
-    )  # .cuda()
+    ).to(device)  # .cuda()
 
     ########### test new patch merge model##########
     # harvard x8 test set shape: [1000, 1000, 500, 125]
@@ -1652,10 +1652,10 @@ if __name__ == "__main__":
     #         print(m.window_dict)
     #         print('----------'*6)
 
-    ms = torch.randn(1, 31, 16, 16)  # .cuda()
-    mms = torch.randn(1, 31, 32, 32)  # .cuda()
-    lms = torch.randn(1, 31, 64, 64)  # .cuda()
-    pan = torch.randn(1, 3, 64, 64)  # .cuda()
+    ms = torch.randn(1, 31, 16, 16).to(device)  # .cuda()
+    mms = torch.randn(1, 31, 32, 32).to(device)  # .cuda()
+    lms = torch.randn(1, 31, 64, 64).to(device)  # .cuda()
+    pan = torch.randn(1, 3, 64, 64).to(device)  # .cuda()
 
     # ms = torch.randn(1, 31, 64, 64).cuda()
     # mms = torch.randn(1, 31, 128, 128).cuda()
@@ -1681,7 +1681,7 @@ if __name__ == "__main__":
 
     # net._set_window_dict(net.window_dict_train_reduce)
 
-    print(net._forward_implem(pan, lms, mms, ms).shape)
+    # print(net._forward_implem(pan, lms, mms, ms).shape)
     # print(net.val_step(ms, lms, pan).shape)
 
     # criterion = torch.nn.L1Loss()
@@ -1692,10 +1692,10 @@ if __name__ == "__main__":
     #     if p.grad is None:
     #         print(n)
 
-    # net.forward = net._forward_implem
-    # from fvcore.nn import FlopCountAnalysis, flop_count_table
+    net.forward = net._forward_implem
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
 
-    # print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
+    print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
 
     # print(net)
 

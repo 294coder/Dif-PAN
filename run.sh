@@ -40,13 +40,13 @@
 #  --pretrain --pretrain_id '2o663zwh' #--non_load_strict
 
 ## dcformer arch
-python main.py --proj_name hpmnet --arch hpmnet  \
--b 3 --device 'cuda:1' --dataset 'gf' --logger_on --log_metrics \
+python main.py --proj_name panRWKV --arch panRWKV  \
+-b 32 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
---loss 'hpm' --val_n_epoch 10 --comment 'hpmnet gf2' \
+--loss 'l1ssim' --val_n_epoch 10 --comment 'panRWKV wv3' \
 --ergas_ratio 4 \
---pretrain --pretrain_id '317p7rpk' \
---save_every_eval
+# --pretrain --pretrain_id '1x6ucirh' \
+# --save_every_eval
 # --non_load_strict
 
 

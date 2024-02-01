@@ -13,7 +13,7 @@ from model.module.attention import MultiScaleWindowCrossAttention
 from model.module.layer_norm import LayerNorm, normalization
 from model.panformer import PanFormerEncoderLayer
 
-PLANES = 31
+PLANES = 8
 
 ################ MODULES #####################
 
@@ -863,8 +863,8 @@ class TransitionFPN(nn.Module):
 
 @register_model("dcformer_mwsa_new")
 class DCFormerMWSA(BaseModel):
-    window_dict_train_reduce = {128: 16, 64: 8, 16: 2}
-    # window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
+    # window_dict_train_reduce = {128: 16, 64: 8, 16: 2}
+    window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
     # window_dict_train_reduce = {128: 16, 64: 8, 32: 4}
 
     # ablation
@@ -1604,17 +1604,19 @@ if __name__ == "__main__":
 
     # torch.cuda.set_device('cuda:1')
 
+    device = "cuda:0"
+
     net = DCFormerMWSA(
         64,
         PLANES,
         "C",
-        added_c=3,
-        channel_list=[32, [32, 64], [32, 64, 96]],
-        num_heads=[8, [8, 8], [8, 8, 8]],
+        added_c=1,
+        channel_list=[8, [8, 16], [8, 16, 24]],  # [32, [32, 64], [32, 64, 96]],
+        num_heads=[4, [4, 4], [8, 8, 8]],
         attn_drop=0.0,
         drop_path=0.0,
-        block_list=[2, [2, 2], [4, 4, 4]],
-        mlp_ratio=[2, [2, 2], [2, 2, 2]],
+        block_list=[2, [2, 2], [2, 2, 2]],
+        mlp_ratio=[1, [1, 1], [1, 1, 1]],
         norm_type="ln",
         patch_merge_step=False,
         patch_size_list=[
@@ -1625,7 +1627,7 @@ if __name__ == "__main__":
         ],  # [32, 128, 256, 256],  # [200, 200, 100, 25],
         scale=4,
         crop_batch_size=2,
-    )  # .cuda()
+    ).to(device)
 
     ########### test new patch merge model##########
     # harvard x8 test set shape: [1000, 1000, 500, 125]
@@ -1667,10 +1669,10 @@ if __name__ == "__main__":
     # pan = torch.randn(1, 3, size*4, size*4)  # .cuda()
 
     size = 16
-    ms = torch.randn(1, PLANES, size, size)  # .cuda()
-    mms = torch.randn(1, PLANES, size * 4, size * 4)  # .cuda()
-    lms = torch.randn(1, PLANES, size * 8, size * 8)  # .cuda()
-    pan = torch.randn(1, 3, size * 8, size * 8)  # .cuda()
+    ms = torch.randn(1, PLANES, size, size).to(device)
+    mms = torch.randn(1, PLANES, size * 2, size * 2).to(device)
+    lms = torch.randn(1, PLANES, size * 4, size * 4).to(device)
+    pan = torch.randn(1, 1, size * 4, size * 4).to(device)
 
     # ms = torch.randn(1, 31, 64, 64).cuda()
     # mms = torch.randn(1, 31, 128, 128).cuda()
