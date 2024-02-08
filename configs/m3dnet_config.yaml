@@ -1,0 +1,21 @@
+optimizer:
+  name: 'adam'
+  lr: !!float 1e-3
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  name: 'multi_step'
+  milestones: [ 100, 250, 400, 600, 800, 1000 ]
+  gamma: 0.5
+
+max_norm: 0.01
+
+path:
+  train_path: '/Data2/DataSet/pansharpening/training_data/train_wv3.h5'
+  val_path: '/Data2/DataSet/pansharpening/training_data/valid_wv3.h5'
+
+network_configs:
+  ms_channels: 8
+  pan_channel: 1
+  n_feats: 32
+  n_layer: 4

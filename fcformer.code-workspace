@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../dataset"
+		},
+		{
+			"path": "../effiecient_RWKV_mamba"
+		}
+	],
+	"settings": {
+		"files.autoSave": "afterDelay"
+	}
+}
