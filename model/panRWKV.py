@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
+from functools import partial
 import math
 from torch import einsum
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
@@ -493,6 +494,53 @@ class RWKVBlock(nn.Module):
 #                 nn.init.constant_(m.bias, 0)
 #             nn.init.constant_(m.weight, 1.0)
 
+class MambaInjectionBlock(nn.Module):
+    def __init__(self, in_chan, inner_chan, drop_path=0., attn_drop=0.,
+                 norm_layer=partial(nn.LayerNorm, eps=1e-6), d_state=16, dt_rank='auto', ssm_ratio=2, mlp_ratio=2,
+                 **mamba_kwargs):
+        super().__init__()
+        self.intro_conv = nn.Linear(in_chan, inner_chan)  # nn.Conv2d(in_chan, inner_chan, 1)
+        # self.lerp = nn.Sequential(LayerNorm(in_chan),
+        #                           nn.AdaptiveAvgPool2d(1),
+        #                           nn.Conv2d(in_chan, inner_chan*2, 1),
+        #                           Rearrange('b c 1 1 -> b 1 1 c'))
+        self.mamba = VSSBlock(inner_chan, d_state=d_state, drop_path=drop_path, mlp_ratio=2,
+                              norm_layer=norm_layer, attn_drop=attn_drop, dt_rank=dt_rank,
+                              ssm_ratio=ssm_ratio, **mamba_kwargs)
+        # self.films = nn.ParameterDict(
+        #     {'beta': nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True),
+        #      'gamma': nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)}
+        # )
+        # self.act = nn.SiLU()
+        # self.out_conv = nn.Linear(inner_chan, inner_chan)
+    
+    def forward(self, feat, cond):
+        # print(feat.shape, cond.shape)
+        h, w = feat.shape[1:3]
+        cond = F.interpolate(cond, size=(h, w), mode='bilinear', align_corners=False)
+        # feat = feat.permute(0, -1, 1, 2)
+        cond = cond.permute(0, 2, 3, 1)
+        x = torch.cat([feat, cond], dim=-1)
+        x = self.intro_conv(x)
+        x = self.mamba(x)
+        # x = x * (1 + self.films['gamma']) + self.films['beta']
+        # x = self.out_conv(self.act(x))
+        return x
+    
+class Sequential(nn.Module):
+    def __init__(self, *args):
+        super().__init__()
+        self.mods = nn.ModuleList(args)
+        
+    def __getitem__(self, idx):
+        return self.mods[idx]
+        
+    def forward(self, *args):
+        outp = args[0]
+        for mod in self.mods:
+            outp = mod(outp, *args[1:])
+        return outp
+
 
 ############# PanRWKV Model ################
 
@@ -690,7 +738,7 @@ class ConditionalNAFNet(BaseModel):
 
         self.intro = nn.Sequential(
             nn.Conv2d(
-                in_channels=img_channel + condition_channel,
+                in_channels=img_channel,
                 out_channels=width,
                 kernel_size=1,
                 stride=1,
@@ -749,10 +797,11 @@ class ConditionalNAFNet(BaseModel):
                 #     *[RWKVBlock(chan,8,True,inter_dpr[enc_i],inter_dpr[enc_i],
                 #                 n_layer=depth,layer_id=n_prev_blks + i,) for i in range(num)]
                 # )
-                nn.Sequential(
+                Sequential(
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
                     *[
-                        VSSBlock(chan, inter_dpr[n_prev_blks+i], mlp_ratio=2) for i in range(num)
+                        # VSSBlock(chan, inter_dpr[n_prev_blks+i], mlp_ratio=2) 
+                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
                 )
             )
@@ -765,16 +814,16 @@ class ConditionalNAFNet(BaseModel):
             pt_img_size //= 2
 
         # middle layer
-        self.middle_blks = nn.Sequential(
+        self.middle_blks = Sequential(
             # *[NAFBlock(chan, time_dim) for _ in range(middle_blk_num)]
             # *[RWKVBlock(chan, 8, True, inter_dpr[enc_i], inter_dpr[enc_i],
             #             n_layer=depth, layer_id=n_prev_blks + i,) for i in range(middle_blk_num)]
-            nn.Sequential(
+            # Sequential(
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
                     *[
-                        VSSBlock(chan, inter_dpr[n_prev_blks+i],mlp_ratio=2) for i in range(num)
+                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
-                )
+                # )
         )
         if if_rope: self.middle_rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
         else: self.middle_rope = nn.Identity()
@@ -799,10 +848,11 @@ class ConditionalNAFNet(BaseModel):
                 #     *[RWKVBlock(chan,8,True,inter_dpr[dec_i],inter_dpr[dec_i],
                 #                 n_layer=depth,layer_id=n_prev_blks + i,) for i in range(num)]
                 # )
-                nn.Sequential(
+                Sequential(
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
+                    nn.Linear(chan*2, chan),
                     *[
-                        VSSBlock(chan, inter_dpr[n_prev_blks+i], mlp_ratio=2) for i in range(num)
+                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
                 )
             )
@@ -848,9 +898,9 @@ class ConditionalNAFNet(BaseModel):
 
         # x = inp - cond[:, :inp.shape[1]]
         # x = torch.cat([x, cond], dim=1) 
-        x = torch.cat([inp, cond], dim=1)
+        # x = torch.cat([inp, cond], dim=1)
+        x = inp
         B, C, H, W = x.shape
-        L = H * W
         
         # x_hwwh = torch.cat([x.view(B, -1, L), 
         #                       torch.transpose(x, dim0=2, dim1=3).contiguous().view(B, -1, L)],
@@ -868,18 +918,19 @@ class ConditionalNAFNet(BaseModel):
 
         for encoder, down, rope in zip(self.encoders, self.downs, self.enc_ropes):
             x = rope(x)
-            x = encoder(x)
+            x = encoder(x, cond)
             encs.append(x)
             x = down(x)
 
         x = self.middle_rope(x)
-        x = self.middle_blks(x)
+        x = self.middle_blks(x, cond)
 
         for decoder, up, rope, enc_skip in zip(self.decoders, self.ups, self.dec_ropes, encs[::-1]):
             x = rope(x)
             x = up(x)
-            x = x + enc_skip
-            x = decoder(x)
+            # x = x + enc_skip
+            x = decoder[0](torch.cat([x, enc_skip], dim=-1))
+            x = decoder[1](x, cond)
 
         x = rearrange(x, 'b h w c -> b c h w', h=H, w=W)
         if self.stack and self._stack_forward_flag:
@@ -943,7 +994,7 @@ if __name__ == "__main__":
         condition_channel=1,
         out_channel=4,
         width=32,
-        middle_blk_num=3,
+        middle_blk_num=2,
         enc_blk_nums=[2, 2, 2],
         dec_blk_nums=[2, 2, 2],
         pt_img_size=64,
@@ -966,17 +1017,17 @@ if __name__ == "__main__":
     
     # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
     
-    print(out.shape)
+    # print(out.shape)
     
     # test patch merge
     # sr = net.val_step(ms, img, cond)
     # print(sr.shape)
 
-    print(torch.cuda.memory_summary(device=device))
-    
-    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    # print(torch.cuda.memory_summary(device=device))
+    # 
+    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
     
     # print(parameter_count_table(net))
 
-    # net.forward = net._forward_once
-    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    net.forward = net._forward_once
+    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))

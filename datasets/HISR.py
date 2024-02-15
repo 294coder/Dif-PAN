@@ -44,7 +44,7 @@ class HISRDataSets(data.Dataset):
                 self.dataset_fn = dataset_fn
             else: raise TypeError("dataset_fn should be a list of callable or a callable object")
         else:
-            self.dataset_fn = lambda *x: x
+            self.dataset_fn = lambda *x: x[0]
         
         self.full_res = full_res
         data_s= self._split_parts(
