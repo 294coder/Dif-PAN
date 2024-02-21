@@ -28,6 +28,7 @@ from utils import (
     ep_loss_dict2str,
     ave_multi_rank_dict,
     NonAnalysis,
+    model_params
 )
 from utils.log_utils import TensorboardLogger
 
@@ -46,10 +47,8 @@ def val(
     i = 0
 
     if args.log_metrics:
-        if args.dataset in ["wv3", "qb", "gf", "hisi", "hisi-houston"]:
-            analysis = AnalysisPanAcc(args.ergas_ratio)
-        else:
-            analysis = AnalysisFLIRAcc()
+        if args.dataset in ['flir', 'tno']: analysis = AnalysisFLIRAcc()
+        else: analysis = AnalysisPanAcc(args.ergas_ratio)
     else:
         analysis = NonAnalysis()
     val_loss_dict = {}
@@ -106,35 +105,18 @@ def val(
                 logger.log_curve(v, f'val_{k}', ep)
 
             # log validate image(last batch)
-            if args.dataset not in ["hisi", 'far'] and args.dataset[:4] != 'hisi':
-                if gt.shape[0] > 8:
-                    func = lambda x: x[:8, ...]
-                    gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
-                residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
-                _inc = sr.shape[1]  # wv3: 8, qb: 4, gf: 4
-                logged_img = torch.cat(
-                    [
-                        lms,
-                        pan.repeat(1, _inc, 1, 1),
-                        sr,
-                        residual_image.repeat(1, _inc, 1, 1),
-                    ],
-                    dim=0,
-                )  # [3*b, c, h, w]
-                logged_img = einops.rearrange(
-                    logged_img, "(n k) c h w -> (k n) c h w", n=4
-                )
-                logger.log_images(logged_img, 4, "lms_pan_sr_res", ep)
+            if gt.shape[0] > 8:
+                func = lambda x: x[:8]
+                gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
+            residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
+            logger.log_images([lms, pan, sr, residual_image], nrow=4, names=["lms", "pan", "sr", "res"], epoch=ep, ds_name=args.dataset)
 
             # print out eval information
             logger.print(
                 ep_loss_dict2str(val_loss_dict),
                 f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
             )
-    return (
-        acc_ave,
-        val_loss / i,
-    )  # only rank 0 is reduced and other ranks are original data
+    return acc_ave, val_loss / i  # only rank 0 is reduced and other ranks are original data
 
 
 def train(
@@ -255,10 +237,11 @@ def train(
                 )
             model.train()
             params = {}
-            try:
-                params["model"] = model.module.state_dict()
-            except Exception:  # any threw error
-                params["model"] = model.state_dict()
+            # try:
+            #     params["model"] = model.module.state_dict()
+            # except Exception:  # any threw error
+            #     params["model"] = model.state_dict()
+            params["model"] = model_params(model)
             params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
             params["epochs"] = ep
             params["optim"] = optim.state_dict()

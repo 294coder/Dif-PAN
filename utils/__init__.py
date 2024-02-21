@@ -52,6 +52,7 @@ from utils.network_utils import (
     loss_with_l2_regularization,
     step_loss_backward,
     hook_model,
+    model_params
 )
 from utils.visualize import viz_batch, res_image, get_spectral_image_ready
 from utils.inference_helper_func import ref_for_loop, unref_for_loop

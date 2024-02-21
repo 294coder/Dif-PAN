@@ -33,11 +33,13 @@
 
 ## pannet arch
  python main.py --proj_name panRWKV --arch panRWKV \
- -b 128 --device 'cuda:1' --dataset 'wv3' \
+ -b 128 --device 'cuda:0' --dataset 'wv3' \
  --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
- --loss l1ssim --val_n_epoch 10 --comment 'panRWKV wv3' \
- --logger_on --log_metrics \
-#  --pretrain --pretrain_id 'xstn2k9j' #--non_load_strict
+ --loss l1ssim --val_n_epoch 10 --comment 'panRWKV wv3 multi state tiny' \
+ --log_metrics \
+ --logger_on \
+#  --pretrain --pretrain_id '49yh26v7'
+ #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name restfnet --arch restfnet  \

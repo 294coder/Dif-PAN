@@ -76,6 +76,13 @@ def variance_scaling_initializer(tensor):
             # To get stddev = math.sqrt(factor / n) need to adjust for truncated.
             trunc_stddev = math.sqrt(1.3 * factor / n)
         return fan_in, fan_out, trunc_stddev
+    
+def model_params(model):
+    if isinstance(model, (nn.DataParallel, nn.parallel.DistributedDataParallel)):
+        model = model.module
+    elif isinstance(model, torch._dynamo.eval_frame.OptimizedModule):  # torch.compile model
+        model = model._orig_mod
+    return model.state_dict()
 
 
 def clip_norm(max_norm, network, fp_scaler=None, optim=None):

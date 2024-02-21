@@ -1,7 +1,7 @@
 optimizer:
   name: "adamw"
   lr: !!float 1e-3
-  weight_decay: !!float 1e-3
+  weight_decay: !!float 1e-6
 
 lr_scheduler:
   #  name: 'cos_anneal'
@@ -26,18 +26,18 @@ max_norm: 0.03
 ema_decay: 0.999
 
 path:
-  train_path: "/home/czh/dataset/wv3/train_wv3.h5"
-  val_path: "/home/czh/dataset/wv3/test_wv3_multiExm1.h5"
+  wv3_train_path: "/home/czh/dataset/wv3/train_wv3.h5"
+  wv3_val_path: "/home/czh/dataset/wv3/test_wv3_multiExm1.h5"
 
-  # train_path: "/home/czh/dataset/gf2/train_gf2.h5"
-  # val_path: "/home/czh/dataset/gf2/test_gf2_multiExm1.h5"
+  gf2_train_path: "/home/czh/dataset/gf2/train_gf2.h5"
+  gf2_val_path: "/home/czh/dataset/gf2/test_gf2_multiExm1.h5"
   #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
 
-  # train_path: '/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
-  # val_path: '/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'
+  qb_train_path: '/home/czh/dataset/qb/train_qb.h5'
+  qb_val_path: '/home/czh/dataset/qb/test_qb_multiExm1.h5'
 
-  # train_path: "/home/czh/dataset/cave/x4/train_cave(with_up)x4.h5"
-  # val_path: "/home/czh/dataset/cave/x4/test_cave(with_up)x4.h5"
+  cave_x4_train_path: "/home/czh/dataset/cave/x4/train_cave(with_up)x4.h5"
+  cave_x4_val_path: "/home/czh/dataset/cave/x4/test_cave(with_up)x4.h5"
   #  val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 
   #  train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb.h5"
@@ -68,11 +68,11 @@ network_configs:
   condition_channel: 1
   out_channel: 8
   width: 32
-  middle_blk_num: 8
-  enc_blk_nums: [2,4,6]
-  dec_blk_nums: [2,4,6]
-  drop_path_rate: 0.2
-  if_abs_pos: no
+  middle_blk_num: 2
+  enc_blk_nums: [2,2,2]
+  dec_blk_nums: [2,2,2]
+  drop_path_rate: 0.1
+  if_abs_pos: no  # buggy: convergence is slow
   if_rope: no
   stack: no
   patch_merge: yes

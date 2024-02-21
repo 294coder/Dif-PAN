@@ -6,7 +6,7 @@ import pickle
 import shutil
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Sequence, Iterable
 
 import beartype
 import matplotlib.pyplot as plt
@@ -416,7 +416,7 @@ class TensorboardLogger:
             save2json_file(args.to_dict(), config_cp_path)
             # shutil.copy2(os.path.join(config_file_mv, f'{args.arch}_config.{config_file_type}'), self.log_file_dir)
             self.print(
-                f"move config file to {os.path.abspath(self.log_file_dir)}", "INFO"
+                f"\nmove config file to {os.path.abspath(self.log_file_dir)}", "INFO"
             )
 
     def watch(self, network: nn.Module, watch_type: str, freq: int):
@@ -460,11 +460,12 @@ class TensorboardLogger:
             )
         self.writer.add_image(name, image, epoch, dataformats="CHW")
 
-    def log_images(self, batch_img, nrow, name, epoch, **kwargs):
-        # batch_image: shape [B, C, H, W]
-        batch_img = get_spectral_image_ready(batch_img, name)
-        grid_img = make_grid(batch_img, nrow=nrow, **kwargs)
-        self.log_image(grid_img, name, epoch)
+    def log_images(self, batch_imgs: Sequence, nrow: int, names: Sequence,
+                   epoch: int, ds_name: str, **grid_kwargs):
+        for batch_img, name in zip(batch_imgs, names):
+            batch_img = get_spectral_image_ready(batch_img, name, ds_name)
+            grid_img = make_grid(batch_img, nrow=nrow, **grid_kwargs)
+            self.log_image(grid_img, name, epoch)
 
     def log_network(self, network: nn.Module, ep: int):
         if self.watch_type != "None":

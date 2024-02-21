@@ -11,20 +11,33 @@ def module_load(path, model, device, ddp_rank, strict=True, spec_key='ema_model.
     # parse key
     parsed_keys = spec_key.split('.')
     for k in parsed_keys:
-        params_load = params[k]
+        params = params[k]
 
+    params_load = params
     # may be tedious but useful and safe to avoid 'module.' prefix caused error
     if not strict:
         print('warning: model load strict is False, ' 
               'set it to True if you know what you are doing')
+        
+    def _load_fn(model, params_load, strict):    
+        if 'ema' not in spec_key:  # ordered dict
+            model.load_state_dict(params_load, strict=strict)
+        else:  # sequential list
+            for s_param, param in zip(params_load, model.parameters()):
+                param.data.copy_(s_param.data)
     try:
-        model.load_state_dict(params_load, strict=strict)
+        _load_fn(model, params_load, strict)
     except Exception:
         odict = OrderedDict()
         for k, v in params_load.items():
             odict['module.' + k] = v
             params[spec_key] = odict
-        model.load_state_dict(params[spec_key], strict=strict)
+        
+        if 'ema' not in spec_key: 
+            _load_fn(model, params_load, strict)
+        else: 
+            raise RuntimeError('ema model load failed! shape of params does not match!')
+            
     print('load pretrain weights')
     return model
 
