@@ -105,6 +105,8 @@ def get_optimizer(params, **kwargs):
         return optim.Adam(params, **kwargs)
     elif name == "adamw":
         return optim.AdamW(params, **kwargs)
+    elif name == "radam":
+        return optim.RAdam(params, **kwargs)
     elif name == "lion":
         from lion_pytorch import Lion
         return Lion(params, **kwargs)

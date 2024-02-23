@@ -253,16 +253,18 @@ def cross_selective_scan(
     
     xs = CrossScan.apply(x)
     
-    x_dbl = torch.einsum("b k d l, k c d -> b k c l", xs, x_proj_weight)
+    x_dbl = torch.einsum("b k d l, k c d -> b k c l", xs, x_proj_weight)  # k=4
     if x_proj_bias is not None:
         x_dbl = x_dbl + x_proj_bias.view(1, K, -1, 1)
     dts, Bs, Cs = torch.split(x_dbl, [R, N, N], dim=2)
     dts = torch.einsum("b k r l, k d r -> b k d l", dts, dt_projs_weight)
     xs = xs.view(B, -1, L)
     dts = dts.contiguous().view(B, -1, L)
-    As = -torch.exp(A_logs.to(torch.float)) # (k * c, d_state)
+    As = -torch.exp(A_logs.to(torch.float)) # (k * c, d_state)  # learnable params
+    # comes from xs (feature)
     Bs = Bs.contiguous()
     Cs = Cs.contiguous()
+    # learnable params
     Ds = Ds.to(torch.float) # (K * c)
     delta_bias = dt_projs_bias.view(-1).to(torch.float)
 
@@ -273,6 +275,10 @@ def cross_selective_scan(
         Cs = Cs.to(torch.float)
 
     def selective_scan(u, delta, A, B, C, D=None, delta_bias=None, delta_softplus=True, nrows=1):
+        '''
+        x' = A @ x @ dt + B @ x @dt
+        x'' = C @ x' + D
+        '''
         return SelectiveScan.apply(u, delta, A, B, C, D, delta_bias, delta_softplus, nrows)
     
     ys: torch.Tensor = selective_scan(
@@ -395,15 +401,30 @@ class SS2D(nn.Module):
         
         # conv =======================================
         if self.d_conv > 1:
-            self.conv2d = nn.Conv2d(
-                in_channels=d_expand,
-                out_channels=d_expand,
-                groups=d_expand,
-                bias=conv_bias,
-                kernel_size=d_conv,
-                padding=(d_conv - 1) // 2,
-                **factory_kwargs,
-            )
+            # causal conv here?
+            # TODO: may large kernel help?
+            _LARGE_KERNEL = True
+            if _LARGE_KERNEL:
+                assert d_conv >= 3, "d_conv >= 3"
+                self.conv2d = nn.Conv2d(
+                    in_channels=d_expand,
+                    out_channels=d_expand,
+                    groups=d_expand,
+                    bias=conv_bias,
+                    kernel_size=d_conv,
+                    padding=(d_conv - 1) // 2,
+                    **factory_kwargs,
+                )
+            else:
+                self.conv2d = nn.Conv2d(
+                    in_channels=d_expand,
+                    out_channels=d_expand,
+                    groups=1,
+                    bias=conv_bias,
+                    kernel_size=d_conv,
+                    padding=(d_conv - 1) // 2,
+                    **factory_kwargs,
+                )
 
         # rank ratio =====================================
         self.ssm_low_rank = False
@@ -643,6 +664,8 @@ class SS2D(nn.Module):
                 xz = self.act(xz)
                 x, z = xz.chunk(2, dim=-1) # (b, h, w, d)
         y = self.forward_core(x, channel_first=(self.d_conv > 1))
+        # FFN
+        # gating: out of selective_scan
         y = y * z
         out = self.dropout(self.out_proj(y))
         return out

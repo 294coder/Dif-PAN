@@ -1,3 +1,6 @@
+import os
+os.environ['MPLCONFIGDIR'] = os.getcwd() + '.hypothesis/'
+
 import torch
 from functools import partial
 

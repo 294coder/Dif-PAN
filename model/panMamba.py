@@ -362,23 +362,41 @@ class Attention(nn.Module):
         self.heads = heads
         hidden_dim = dim_head * heads
 
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+        self.to_qkv = nn.Linear(dim, hidden_dim * 3, bias=False)  # nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+        self.to_out = nn.Linear(hidden_dim, dim)
 
     def forward(self, x):
-        b, c, h, w = x.shape
-        qkv = self.to_qkv(x).chunk(3, dim=1)
-        q, k, v = map(
-            lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
-        )
+        # b, c, h, w = x.shape
+        b, c, n = x.shape
+        qkv = self.to_qkv(x).chunk(3, dim=-1)
+        
+        # For 2D image
+        # q, k, v = map(
+        #     lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+        # )
 
+        # q = q * self.scale
+
+        # sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
+        # attn = sim.softmax(dim=-1)
+        # out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
+
+        # out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
+        
+        # For 1D sequence
+        q, k, v = map(lambda t: rearrange(t, "b d (h n) -> b h d n", h=self.heads), qkv)
         q = q * self.scale
-
-        sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
-        attn = sim.softmax(dim=-1)
-        out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
-
-        out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
+        
+        q = q.softmax(dim=-2)
+        k = k.softmax(dim=-1)
+        
+        q = q * self.scale
+        v = v / n
+        
+        context = torch.einsum("b h d n, b h e n -> b h d e", k, v)
+        out = torch.einsum("b h d e, b h d n -> b h e n", context, q)
+        out = rearrange(out, "b h e n -> b e (h n)")
+        
         return self.to_out(out)
 
 
@@ -496,9 +514,9 @@ class RWKVBlock(nn.Module):
 
 class MambaInjectionBlock(nn.Module):
     def __init__(self, in_chan, inner_chan, drop_path=0., mlp_drop=0.,
-                 norm_layer=partial(nn.LayerNorm, eps=1e-6), d_state=32, 
-                 dt_rank='auto', ssm_ratio=2, mlp_ratio=2, forward_type='v2_softmax',
-                 **mamba_kwargs):
+                 norm_layer=partial(nn.LayerNorm, eps=1e-6), d_state=16, 
+                 dt_rank='auto', ssm_conv=7, ssm_ratio=2, mlp_ratio=4, forward_type='v2',
+                 use_ckpt=False, **mamba_kwargs):
         super().__init__()
         self.intro_conv = nn.Linear(in_chan, inner_chan, bias=True)  # nn.Conv2d(in_chan, inner_chan, 1)
         # self.lerp = nn.Sequential(LayerNorm(in_chan),
@@ -506,27 +524,40 @@ class MambaInjectionBlock(nn.Module):
         #                           nn.Conv2d(in_chan, inner_chan*2, 1),
         #                           Rearrange('b c 1 1 -> b 1 1 c'))
         self.mamba = VSSBlock(inner_chan, d_state=d_state, drop_path=drop_path, mlp_ratio=mlp_ratio,
-                              norm_layer=norm_layer, mlp_drop_rate=mlp_drop, ssm_dt_rank=dt_rank,
-                              ssm_ratio=ssm_ratio, forward_type=forward_type, **mamba_kwargs)
+                              norm_layer=norm_layer, mlp_drop_rate=mlp_drop, ssm_conv=ssm_conv, ssm_dt_rank=dt_rank,
+                              ssm_ratio=ssm_ratio, forward_type=forward_type, use_checkpoint=use_ckpt, **mamba_kwargs)
+        
+        # v1: add attn
+        # self.adaptive_pool_size = (2, 2)
+        # _pool_size = self.adaptive_pool_size[0] * self.adaptive_pool_size[1]
+        # self.chan_attn = Attention(_pool_size, 4, 4)  # 4 * 4 = 16 is d_state
+        
+        # v2: Film module
         # self.films = nn.ParameterDict(
         #     {'beta': nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True),
         #      'gamma': nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True)}
         # )
+        # self.norm = nn.LayerNorm(inner_chan)
         # self.act = nn.GELU()
         # self.out_conv = nn.Linear(inner_chan, inner_chan)
     
     def forward(self, feat, cond):
         # print(feat.shape, cond.shape)
-        h, w = feat.shape[1:3]
+        b, h, w, c = feat.shape
         cond = F.interpolate(cond, size=(h, w), mode='bilinear', align_corners=False)
         # feat = feat.permute(0, -1, 1, 2)
         cond = cond.permute(0, 2, 3, 1)
         x = torch.cat([feat, cond], dim=-1)
+        # x, gamma, beta = self.intro_conv(x).chunk(3, dim=-1)
         x = self.intro_conv(x)
         x = self.mamba(x)
+        # x_spe = F.adaptive_avg_pool2d(x_in.permute(0, 3, 1, 2), self.adaptive_pool_size).view(b, c, -1)  # [b, c, prod(adapt_pool_size)]
+        # x_spe = self.chan_attn(x_spe).mean(dim=-1)[:, None, None]  # [b, 1, 1, c]
+        # x = x_spa * x_spe
+        
         # gamma, beta = self.films['gamma'], self.films['beta']
         # x = x * (1 + gamma / gamma.norm()) + beta / beta.norm()
-        # x = self.out_conv(self.act(x))
+        # x = self.out_conv(self.act(self.norm(x))) + x
         return x
     
 class Sequential(nn.Module):
@@ -690,22 +721,41 @@ class NAFBlock(nn.Module):
         return x, time
 
 
-def down(chan, h, w):
+class Permute(nn.Module):
+    def __init__(self, mode='c_first'):
+        super().__init__()
+        self.mode = mode
+        
+    def forward(self, x):
+        if self.mode == 'c_first':
+            # b h w c -> b c h w
+            return x.permute(0, 3, 1, 2)
+        elif self.mode == 'c_last':
+            # b c h w -> b h w c
+            return x.permute(0, 2, 3, 1)
+        else: raise NotImplementedError
+        
+        
+def down(chan):
     return nn.Sequential(
-        Rearrange('b h w c -> b c h w', h=h, w=w),
+        # Rearrange('b h w c -> b c h w', h=h, w=w),
+        Permute('c_first'),
         nn.Conv2d(chan, 2 * chan, 2, 2),
-        Rearrange('b c h w -> b h w c'),
+        # Rearrange('b c h w -> b h w c'),
+        Permute('c_last'),
     )
     
-def up(chan, h, w):
+def up(chan):
     return nn.Sequential(
-        Rearrange('b h w c -> b c h w', h=h, w=w),
+        # Rearrange('b h w c -> b c h w', h=h, w=w),
+        Permute('c_first'),
         # ver 1: use pixelshuffle
         # ver 2: directly upsample and half the channels
         nn.Conv2d(chan, chan // 2, 1, bias=False), 
         # nn.PixelShuffle(2),
         nn.Upsample(scale_factor=2, mode='bilinear'),
-        Rearrange('b c h w -> b h w c'),
+        # Rearrange('b c h w -> b h w c'),
+        Permute('c_last'),
     )
 
 @register_model("panRWKV")
@@ -719,6 +769,7 @@ class ConditionalNAFNet(BaseModel):
         middle_blk_num=1,
         enc_blk_nums=[],
         dec_blk_nums=[],
+        ssm_convs = [],
         upscale=1,
         if_abs_pos=True,
         if_rope=False,
@@ -814,14 +865,14 @@ class ConditionalNAFNet(BaseModel):
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
                     *[
                         # VSSBlock(chan, inter_dpr[n_prev_blks+i], mlp_ratio=2) 
-                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
+                        MambaInjectionBlock(chan+condition_channel, chan, ssm_conv=ssm_convs[enc_i], drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
                 )
             )
             if if_rope: self.enc_ropes.append(VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None))
             else: self.enc_ropes.append(nn.Identity())
             
-            self.downs.append(down(chan, pt_img_size, pt_img_size))
+            self.downs.append(down(chan))
             chan = chan * 2
             n_prev_blks += num
             pt_img_size //= 2
@@ -834,22 +885,22 @@ class ConditionalNAFNet(BaseModel):
             # Sequential(
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
                     *[
-                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
+                        MambaInjectionBlock(chan+condition_channel, chan, ssm_conv=ssm_convs[-1], drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
                 # )
         )
         if if_rope: self.middle_rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
         else: self.middle_rope = nn.Identity()
-        
         n_prev_blks += middle_blk_num
 
         # decoder
+        ssm_convs = list(reversed(ssm_convs))
         for dec_i, num in enumerate(reversed(dec_blk_nums), enc_i):
             if if_rope: self.dec_ropes.append(VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None))
             else: self.dec_ropes.append(nn.Identity())
             
             self.ups.append(
-                up(chan, pt_img_size, pt_img_size)
+                up(chan)
                 # Upsample(chan, chan//2)
             )
             chan = chan // 2
@@ -865,7 +916,7 @@ class ConditionalNAFNet(BaseModel):
                     # *[MambaBlock(chan,16,dp_ratio=inter_dpr[n_prev_blks+i]) for i in range(num)]
                     nn.Linear(chan*2, chan),
                     *[
-                        MambaInjectionBlock(chan+condition_channel, chan, drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
+                        MambaInjectionBlock(chan+condition_channel, chan, ssm_conv=ssm_convs[dec_i-enc_i], drop_path=inter_dpr[n_prev_blks+i]) for i in range(num)
                     ]
                 )
             )
@@ -876,7 +927,7 @@ class ConditionalNAFNet(BaseModel):
         # for patch merging if the image is too large       
         self.patch_merge = patch_merge 
         if patch_merge:
-            self._patch_merge_model = PatchMergeModule(self, crop_batch_size=32, patch_size_list=[16, 64, 64], scale=4,
+            self._patch_merge_model = PatchMergeModule(self, crop_batch_size=64, patch_size_list=[16, 64, 64], scale=4,
                                                        patch_merge_step=self.patch_merge_step)
             
         # init
@@ -962,9 +1013,9 @@ class ConditionalNAFNet(BaseModel):
 
         return x
 
-    def stacking_forward(self, inp, cond, time):
-        out = self._forward_once(inp, cond, time)
-        out = self._forward_once(out, cond, time)
+    def stacking_forward(self, inp, cond):
+        out = self._forward_once(inp, cond)
+        out = self._forward_once(out, cond)
 
         return out
 
@@ -1008,15 +1059,17 @@ if __name__ == "__main__":
 
     device = torch.device("cuda:0")
     net = ConditionalNAFNet(
-        img_channel=4,
+        img_channel=8,
         condition_channel=1,
-        out_channel=4,
+        out_channel=8,
         width=32,
-        middle_blk_num=6,
-        enc_blk_nums=[4, 8, 12],
-        dec_blk_nums=[4, 8, 12],
+        middle_blk_num=2,
+        enc_blk_nums=[2]*3,
+        dec_blk_nums=[2]*3,
+        ssm_convs = [11,9,7],
         pt_img_size=64,
         if_rope=False,
+        if_abs_pos=False,
         stack=False,
         patch_merge=True,
     ).to(device)
@@ -1025,14 +1078,14 @@ if __name__ == "__main__":
 
     img_size = 16
     scale = 4
-    ms = torch.randn(1, 4, img_size, img_size).to(device)
-    img = torch.randn(1, 4, img_size*scale, img_size*scale).to(device)
+    ms = torch.randn(1, 8, img_size, img_size).to(device)
+    img = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
     cond = torch.randn(1, 1, img_size*scale, img_size*scale).to(device)
-    gt = torch.randn(1, 4, img_size*scale, img_size*scale).to(device)
+    gt = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
 
     # net = torch.compile(net)
     
-    out = net._forward_once(img, cond)
+    out = net._forward_implem(img, cond)
     # loss = F.mse_loss(out, gt)
     # loss.backward()
     # print(loss)
@@ -1048,9 +1101,7 @@ if __name__ == "__main__":
 
     # print(torch.cuda.memory_summary(device=device))
     # 
-    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
-    
-    # print(parameter_count_table(net))
+    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    # net.forward = net._forward_once
-    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    net.forward = net._forward_once
+    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))

@@ -19,7 +19,7 @@ lr_scheduler:
   # factor: !!float 0.2
   # cooldown: 50
   name: "multi_step"
-  milestones: [200, 1000] #[100, 800]
+  milestones: [200, 1500] #[100, 800]
   gamma: 0.1
 
 max_norm: 0.03
@@ -40,16 +40,13 @@ path:
   cave_x4_val_path: "/home/czh/dataset/cave/x4/test_cave(with_up)x4.h5"
   #  val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 
-  #  train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb.h5"
-  #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
-
   # train_path: "/Data2/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb_16.h5"
   # val_path: "/Data2/ShangqiDeng/data/HSI/cave_x8/test_cavepatches128-2.h5"
   # val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 
-  # train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
+  harvard_x4_train_path: "/home/czh/dataset/harvard/x4/train_harvard(with_up)x4_rgb.h5"
   # val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_clip_128.h5"
-  # val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+  harvard_x4_val_path: "/home/czh/dataset/harvard/x4/test_harvard(with_up)x4_rgb.h5"
 
   # train_path: "/Data2/ShangqiDeng/data/HSI/harvard_x8/train_harvard(with_up)x8_rgb.h5"
   # val_path: "/Data2/ShangqiDeng/data/HSI/harvard_x8/test_harvard(with_up)x8_rgb.h5"
@@ -71,7 +68,8 @@ network_configs:
   middle_blk_num: 2
   enc_blk_nums: [2,2,2]
   dec_blk_nums: [2,2,2]
-  drop_path_rate: 0.1
+  ssm_convs: [11,9,7]
+  drop_path_rate: 0.2
   if_abs_pos: no  # buggy: convergence is slow
   if_rope: no
   stack: no

@@ -303,7 +303,7 @@ def main(local_rank, args):
                     GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
-            elif args.dataset[:4] == 'cave' or args.dataset[:4] == 'harvard':
+            elif args.dataset[:4] == 'cave' or args.dataset[:7] == 'harvard':
                 keys = ["LRHSI", "HSI_up", "RGB", "GT"]
                 if args.dataset.split('-')[-1] == 'houston':
                     from einops import rearrange
