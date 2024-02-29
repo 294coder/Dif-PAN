@@ -6,8 +6,10 @@ import torch
 import torch.utils.data as data
 import tqdm
 from scipy.io import savemat
-from datasets.TNO import TNODataset
+import os
+os.environ['HF_HOME'] = '.cache/huggingface'
 
+from datasets.TNO import TNODataset
 from datasets.wv3 import WV3Datasets
 from datasets.HISR import HISRDataSets
 from datasets.gf import GF2Datasets
@@ -24,11 +26,11 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:2"
+device = "cuda:0"
 torch.cuda.set_device(device)
-dataset_type = "wv2"
+dataset_type = "wv3"
 save_format = "mat"
-full_res = False
+full_res = True
 split_patch = False
 patch_size = 1000
 ergas_ratio = 4
@@ -38,7 +40,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = False
+save_mat = True
 loop_func = (
     partial(
         ref_for_loop,
@@ -52,12 +54,13 @@ loop_func = (
         unref_for_loop,
         hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8", "gf5"],
         patch_size_list=patch_size_list,
+        sensor=dataset_type,
     )
 )
-name = "dcformer"
-subarch = "mwsa_new"
+name = "panRWKV"
+subarch = ""
 dl_bs = 1
-crop_bs = 2
+crop_bs = 4
 
 
 print("=" * 50)
@@ -102,6 +105,8 @@ print("=" * 50)
 # p = './weight/dcformer_1g9ljhul.pth'  # dcformer_mwsa wx 8 CAttn
 
 # p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
+
+p = 'weight/panRWKV_73tpxe94.pth'  # pan mamba wv3 middle with channel attn
 # ========================================================
 
 # ================HISI CAVE checkpoint=============
@@ -234,10 +239,10 @@ print("=" * 50)
 
 if dataset_type == "wv3":
     if not full_res:
-        path = "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+        path = "/home/czh/dataset/wv3/test_wv3_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
-        path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
+        path = "/home/czh/dataset/wv3/test_wv3_OrigScale_multiExm1.h5"
 elif dataset_type == "cave":
     path = "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 elif dataset_type == "cave_x8":

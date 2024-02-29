@@ -28,6 +28,7 @@ def unref_for_loop(model,
                    sz,
                    *,
                    split_patch=False,
+                   sensor=None,
                    **patch_merge_module_kwargs):
     bs = dl.batch_size
     all_sr = []
@@ -35,11 +36,14 @@ def unref_for_loop(model,
         spa_size = tuple(dl.dataset.lms.shape[-2:])
     except AttributeError:
         spa_size = tuple(dl.dataset.rgb.shape[-2:])
+        
+    analysis = AnalysisPanAcc(ref=False, sensor=sensor)
     
     inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
     if split_patch:
         # assert bs == 1, 'batch size should be 1'
-        model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
+        if not hasattr(model, '_patch_merge_model'):
+            model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
     for i, (pan, ms, lms) in inference_bar:
         pan, ms, lms = pan.to(device).float(), ms.to(device).float(), lms.to(device).float()
         # split the image into several patches to avoid gpu OOM
@@ -56,11 +60,16 @@ def unref_for_loop(model,
         else:
             sr = model.val_step(ms, lms, pan)
         sr = sr.clip(0, 1)
+        
+        analysis(sr, ms, lms, pan)
+        
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
         viz_batch(sr.detach().cpu(), suffix='sr', start_index=i)
         viz_batch(ms.detach().cpu(), suffix='ms', start_index=i)
         viz_batch(pan.detach().cpu(), suffix='pan', start_index=i)
+        
+    print(analysis.print_str())
 
     return all_sr
 

@@ -68,8 +68,8 @@ network_configs:
   middle_blk_num: 2
   enc_blk_nums: [2,2,2]
   dec_blk_nums: [2,2,2]
-  ssm_convs: [11,9,7]
-  drop_path_rate: 0.2
+  ssm_convs: [11, 9, 7] #[11,11,11]
+  drop_path_rate: 0.1
   if_abs_pos: no  # buggy: convergence is slow
   if_rope: no
   stack: no

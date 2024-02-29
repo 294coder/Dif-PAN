@@ -210,9 +210,7 @@ def main(local_rank, args):
     # resume training
     if args.load:
         args.resume = "allow"
-        p = osp.join(
-            args.save_base_path, args.arch + "_" + status_tracker.status["id"] + ".pth"
-        )
+        p = osp.join(args.save_base_path, args.arch + "_" + status_tracker.status["id"] + ".pth")
         if args.resume_total_epochs is not None:
             assert (
                 args.resume_total_epochs == args.epochs
@@ -321,9 +319,7 @@ def main(local_rank, args):
             raise NotImplementedError(f"not support dataset {args.dataset}")
 
     if args.ddp:
-        train_sampler = torch.utils.data.DistributedSampler(
-            train_ds, shuffle=args.shuffle
-        )
+        train_sampler = torch.utils.data.DistributedSampler( train_ds, shuffle=args.shuffle)
         val_sampler = torch.utils.data.DistributedSampler(val_ds, shuffle=args.shuffle)
     else:
         train_sampler, val_sampler = None, None
@@ -359,7 +355,7 @@ def main(local_rank, args):
     print("network params are saved at {}".format(args.save_path))
     
     # save checker
-    save_checker = BestMetricSaveChecker(metric_name='PSNR')
+    save_checker = BestMetricSaveChecker(metric_name='SAM', check_order='down')
 
     # start training
     with status_tracker:

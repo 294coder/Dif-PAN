@@ -388,9 +388,8 @@ class Attention(nn.Module):
         q = q * self.scale
         
         q = q.softmax(dim=-2)
+        # q = q / q.norm(dim=-1, keepdim=True)
         k = k.softmax(dim=-1)
-        
-        q = q * self.scale
         v = v / n
         
         context = torch.einsum("b h d n, b h e n -> b h d e", k, v)
@@ -518,6 +517,7 @@ class MambaInjectionBlock(nn.Module):
                  dt_rank='auto', ssm_conv=7, ssm_ratio=2, mlp_ratio=4, forward_type='v2',
                  use_ckpt=False, **mamba_kwargs):
         super().__init__()
+        self.inner_chan = inner_chan
         self.intro_conv = nn.Linear(in_chan, inner_chan, bias=True)  # nn.Conv2d(in_chan, inner_chan, 1)
         # self.lerp = nn.Sequential(LayerNorm(in_chan),
         #                           nn.AdaptiveAvgPool2d(1),
@@ -528,9 +528,9 @@ class MambaInjectionBlock(nn.Module):
                               ssm_ratio=ssm_ratio, forward_type=forward_type, use_checkpoint=use_ckpt, **mamba_kwargs)
         
         # v1: add attn
-        # self.adaptive_pool_size = (2, 2)
-        # _pool_size = self.adaptive_pool_size[0] * self.adaptive_pool_size[1]
-        # self.chan_attn = Attention(_pool_size, 4, 4)  # 4 * 4 = 16 is d_state
+        self.adaptive_pool_size = (2, 2)
+        _pool_size = math.prod(self.adaptive_pool_size)
+        self.chan_attn = Attention(_pool_size, 4, 4)  # 4 * 4 = 16 is d_state
         
         # v2: Film module
         # self.films = nn.ParameterDict(
@@ -550,10 +550,13 @@ class MambaInjectionBlock(nn.Module):
         x = torch.cat([feat, cond], dim=-1)
         # x, gamma, beta = self.intro_conv(x).chunk(3, dim=-1)
         x = self.intro_conv(x)
+        x_in = x
+        
         x = self.mamba(x)
-        # x_spe = F.adaptive_avg_pool2d(x_in.permute(0, 3, 1, 2), self.adaptive_pool_size).view(b, c, -1)  # [b, c, prod(adapt_pool_size)]
-        # x_spe = self.chan_attn(x_spe).mean(dim=-1)[:, None, None]  # [b, 1, 1, c]
-        # x = x_spa * x_spe
+        
+        x_spe = F.adaptive_avg_pool2d(x_in.permute(0, 3, 1, 2), self.adaptive_pool_size).view(b, self.inner_chan, -1)  # [b, c, prod(adapt_pool_size)]
+        x_spe = self.chan_attn(x_spe).mean(dim=-1)[:, None, None]  # [b, 1, 1, c]
+        x = x + x_spe
         
         # gamma, beta = self.films['gamma'], self.films['beta']
         # x = x * (1 + gamma / gamma.norm()) + beta / beta.norm()
@@ -1026,8 +1029,10 @@ class ConditionalNAFNet(BaseModel):
             return self.stacking_forward(*args, **kwargs)
 
     @torch.no_grad()
-    def val_step(self, ms, lms, pan):
-        if self.patch_merge:
+    def val_step(self, ms, lms, pan, patch_merge=None):
+        if patch_merge is None: 
+            patch_merge = self.patch_merge
+        if patch_merge:
             sr = self._patch_merge_model.forward_chop(ms, lms, pan)[0] + lms
         else:
             self.alter_ropes(pan.shape[-1])
@@ -1062,11 +1067,11 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=32,
+        width=16,
         middle_blk_num=2,
         enc_blk_nums=[2]*3,
         dec_blk_nums=[2]*3,
-        ssm_convs = [11,9,7],
+        ssm_convs = [11,11,11]*3,
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,

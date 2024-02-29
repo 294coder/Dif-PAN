@@ -46,7 +46,8 @@ class Identity:
 def to_numpy(*args):
     l = []
     for i in args:
-        l.append(i.detach().cpu().numpy())
+        if isinstance(i, torch.Tensor):
+            l.append(i.detach().cpu().numpy())
     return l
 
 
@@ -84,9 +85,9 @@ def h5py_to_dict(file: h5py.File, keys=None) -> dict[str, np.ndarray]:
     return d
 
 
-def dict_to_str(d):
+def dict_to_str(d, decimals=4):
     n = len(d)
-    func = lambda k, v: f"{k}: {v.item() if isinstance(v, torch.Tensor) else v}"
+    func = lambda k, v: f"{k}: {torch.round(v, decimals=decimals).item() if isinstance(v, torch.Tensor) else np.round(v, decimals=decimals)}"
     s = ""
     for i, (k, v) in enumerate(d.items()):
         s += func(k, v) + (", " if i < n - 1 else "")
