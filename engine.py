@@ -10,6 +10,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from contextlib import nullcontext
+from torch_ema import ExponentialMovingAverage
 
 from model.base_model import BaseModel
 from utils import (
@@ -27,6 +28,7 @@ from utils import (
     ep_loss_dict2str,
     ave_multi_rank_dict,
     NonAnalysis,
+    model_params
 )
 from utils.log_utils import TensorboardLogger
 
@@ -45,10 +47,8 @@ def val(
     i = 0
 
     if args.log_metrics:
-        if args.dataset in ["wv3", "qb", "gf", "hisi"]:
-            analysis = AnalysisPanAcc(args.ergas_ratio)
-        else:
-            analysis = AnalysisFLIRAcc()
+        if args.dataset in ['flir', 'tno']: analysis = AnalysisFLIRAcc()
+        else: analysis = AnalysisPanAcc(args.ergas_ratio)
     else:
         analysis = NonAnalysis()
     val_loss_dict = {}
@@ -105,35 +105,18 @@ def val(
                 logger.log_curve(v, f'val_{k}', ep)
 
             # log validate image(last batch)
-            if args.dataset not in ["hisi", 'far']:
-                if gt.shape[0] > 8:
-                    func = lambda x: x[:8, ...]
-                    gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
-                residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
-                _inc = sr.shape[1]  # wv3: 8, qb: 4, gf: 4
-                logged_img = torch.cat(
-                    [
-                        lms,
-                        pan.repeat(1, _inc, 1, 1),
-                        sr,
-                        residual_image.repeat(1, _inc, 1, 1),
-                    ],
-                    dim=0,
-                )  # [3*b, c, h, w]
-                logged_img = einops.rearrange(
-                    logged_img, "(n k) c h w -> (k n) c h w", n=4
-                )
-                logger.log_images(logged_img, 4, "lms_pan_sr_res", ep)
+            if gt.shape[0] > 8:
+                func = lambda x: x[:8]
+                gt, lms, pan, sr = list(map(func, [gt, lms, pan, sr]))
+            residual_image = res_image(gt, sr, exaggerate_ratio=100)  # [b, 1, h, w]
+            logger.log_images([lms, pan, sr, residual_image], nrow=4, names=["lms", "pan", "sr", "res"], epoch=ep, ds_name=args.dataset)
 
             # print out eval information
             logger.print(
                 ep_loss_dict2str(val_loss_dict),
                 f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
             )
-    return (
-        acc_ave,
-        val_loss / i,
-    )  # only rank 0 is reduced and other ranks are original data
+    return acc_ave, val_loss / i  # only rank 0 is reduced and other ranks are original data
 
 
 def train(
@@ -147,6 +130,7 @@ def train(
         epochs: int,
         eval_every_epochs: int,
         save_path: str,
+        check_save_fn: Callable=None,
         logger: Union[WandbLogger, TensorboardLogger] = None,
         resume_epochs: int = 1,
         ddp=False,
@@ -176,7 +160,12 @@ def train(
     :return:
     """
     logger.print("start training!")
-    network = model
+    ema_net = ExponentialMovingAverage(parameters=[p for p in model.parameters() if p.requires_grad],
+                                       decay=args.ema_decay)
+    ema_net.to(next(model.parameters()).device)
+    save_checker = lambda *check_args: check_save_fn(check_args[0]) if check_save_fn is not None else \
+                    lambda val_acc_dict, val_loss, optim_val_loss: val_loss < optim_val_loss
+    
     warm_up_scheduler = LinearWarmupScheduler(
         optim, 0, args.optimizer.lr, warm_up_epochs
     )
@@ -199,7 +188,7 @@ def train(
 
             optim.zero_grad()
             with amp.autocast(enabled=fp16):
-                sr, loss_out = network(ms, lms, pan, gt, criterion, mode="train")
+                sr, loss_out = model(ms, lms, pan, gt, criterion, mode="train")
 
                 # if loss is hybrid, will return tensor loss and a dict
                 if isinstance(loss_out, tuple):
@@ -213,7 +202,7 @@ def train(
             step_loss_backward_partial = partial(
                 step_loss_backward,
                 optim=optim,
-                network=network,
+                network=model,
                 max_norm=max_norm,
                 loss=loss,
                 fp16=fp16,
@@ -228,6 +217,7 @@ def train(
                     logger.print("*" * 20, "grad_accm", "*" * 20)
             else:
                 step_loss_backward_partial(grad_accum=False)
+            ema_net.update()
 
         # scheduler update
         if ep > warm_up_epochs:
@@ -240,22 +230,25 @@ def train(
 
         # eval
         if ep % eval_every_epochs == 0:
-            network.eval()
-            val_acc_dict, val_loss = val(
-                network, val_dl, criterion, logger, ep, optim_val_loss, args
-            )
-            network.train()
+            model.eval()
+            with ema_net.average_parameters():
+                val_acc_dict, val_loss = val(
+                    model, val_dl, criterion, logger, ep, optim_val_loss, args
+                )
+            model.train()
             params = {}
-            try:
-                params["model"] = network.module.state_dict()
-            except Exception:  # any threw error
-                params["model"] = network.state_dict()
+            # try:
+            #     params["model"] = model.module.state_dict()
+            # except Exception:  # any threw error
+            #     params["model"] = model.state_dict()
+            params["model"] = model_params(model)
+            params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
             params["epochs"] = ep
             params["optim"] = optim.state_dict()
             params["lr_scheduler"] = lr_scheduler.state_dict()
             params["metrics"] = val_acc_dict
             if not args.save_every_eval:
-                if val_loss < optim_val_loss and is_main_process():
+                if save_checker(val_acc_dict, val_loss, optim_val_loss) and is_main_process():
                     torch.save(params, save_path)
                     optim_val_loss = val_loss
                     logger.print("save params")
@@ -310,4 +303,4 @@ def train(
 
         # watch network params(grad or data or both)
         if isinstance(logger, TensorboardLogger):
-            logger.log_network(network, ep)
+            logger.log_network(model, ep)

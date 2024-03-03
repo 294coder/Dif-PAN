@@ -1,15 +1,12 @@
 import time
 from typing import Union
-import PIL.Image
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data as data
 import torchvision.transforms as T
-import cv2
-import numpy as np
 import h5py
 import random
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Callable
 
 
 class HISRDataSets(data.Dataset):
@@ -19,7 +16,9 @@ class HISRDataSets(data.Dataset):
         file: Union[h5py.File, str, dict],
         aug_prob=0.0,
         rgb_to_bgr=False,
-        full_res=False
+        full_res=False,
+        *,
+        dataset_fn=None
     ):
         super(HISRDataSets, self).__init__()
         # warning: you should not save file (h5py.File) in this class,
@@ -32,6 +31,21 @@ class HISRDataSets(data.Dataset):
                 "warning: when @file is a h5py.File object, it can not be pickled.",
                 "try to set DataLoader number_worker to 0",
             )
+            
+        # checking dataset_fn type
+        if dataset_fn is not None:
+            if isinstance(dataset_fn, (list, tuple)):
+                def _apply_fn(tensor):
+                    for fn in dataset_fn:
+                        tensor = fn(tensor)
+                    return tensor
+                self.dataset_fn = _apply_fn 
+            elif isinstance(dataset_fn, Callable):
+                self.dataset_fn = dataset_fn
+            else: raise TypeError("dataset_fn should be a list of callable or a callable object")
+        else:
+            self.dataset_fn = lambda *x: x[0]
+        
         self.full_res = full_res
         data_s= self._split_parts(
             file, rgb_to_bgr=rgb_to_bgr, full=full_res
@@ -113,7 +127,7 @@ class HISRDataSets(data.Dataset):
             data = []
             for k in keys:
                 data.append(
-                    torch.tensor(file[k][:], dtype=torch.float32),
+                    self.dataset_fn(torch.tensor(file[k][:], dtype=torch.float32)),
                 )
             if rgb_to_bgr:
                 print("warning: rgb to bgr, for testing generalization only.")

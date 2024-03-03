@@ -8,6 +8,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.utils.data as data
 import time
+import colored_traceback.always
 from wandb.util import generate_id
 
 from datasets.FLIR_2 import FLIRDataset
@@ -29,44 +30,17 @@ from utils import (
     merge_args_namespace,
     module_load,
     resume_load,
+    BestMetricSaveChecker,
     set_all_seed,
+    get_loss
 )
-from utils.loss_utils import get_loss
-
 
 def get_args():
     parser = argparse.ArgumentParser("PANFormer")
 
     # network
-    parser.add_argument(
-        "-a",
-        "--arch",
-        type=str,
-        default="pannet",
-        choices=[
-            "pannet",
-            "panformer",
-            "fusionnet",
-            "m3dnet",
-            "dcfnet",
-            "dcformer",
-            "hypertransformer",
-            "fuseformer",
-            "mmnet",
-            "ydtr",
-            "cssnet",
-            "gppnn",
-            "pmacnet",
-            "ssrnet",
-            "hsrnet",
-            "restfnet",
-            "hpmnet",
-            "panRWKV",
-        ],
-    )
-    parser.add_argument(
-        "--sub_arch", default=None, help="panformer sub-architecture name"
-    )
+    parser.add_argument("-a", "--arch", type=str, default="pannet")
+    parser.add_argument("--sub_arch", default=None, help="panformer sub-architecture name")
 
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
@@ -103,20 +77,14 @@ def get_args():
     parser.add_argument("--save_every_eval", action="store_true", default=False)
 
     # resume training config
-    parser.add_argument(
-        "--resume_ep", default=None, required=False, help="do not specify it"
-    )
+    parser.add_argument("--resume_ep", default=None, required=False, help="do not specify it")
     parser.add_argument("--resume_lr", type=float, required=False, default=None)
     parser.add_argument("--resume_total_epochs", type=int, required=False, default=None)
 
     # path and load
-    parser.add_argument(
-        "-p", "--path", type=str, default=None, help="only for unsplitted dataset"
-    )
+    parser.add_argument("-p", "--path", type=str, default=None, help="only for unsplitted dataset")
     parser.add_argument("--split_ratio", type=float, default=None)
-    parser.add_argument(
-        "--load", action="store_true", default=False, help="resume training"
-    )
+    parser.add_argument("--load", action="store_true", default=False, help="resume training")
     parser.add_argument("--save_base_path", type=str, default="./weight")
 
     # datasets config
@@ -125,7 +93,7 @@ def get_args():
     parser.add_argument("--hp", action="store_true", default=False)
     parser.add_argument("--shuffle", type=bool, default=True)
     parser.add_argument("--aug_probs", nargs="+", type=float, default=[0.0, 0.0])
-    parser.add_argument("-s", "--seed", type=int, default=2022)
+    parser.add_argument("-s", "--seed", type=int, default=3407)
     parser.add_argument("-n", "--num_worker", type=int, default=8)
     parser.add_argument("--ergas_ratio", type=int, choices=[4, 8], default=4)
 
@@ -133,12 +101,7 @@ def get_args():
     parser.add_argument("--logger_on", action="store_true", default=False)
     parser.add_argument("--proj_name", type=str, default="panformer_wv3")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default="None",
-        help="used in wandb logger, please not use it in tensorboard logger",
-    )
+    parser.add_argument("--resume", type=str, default="None", help="used in wandb logger, please not use it in tensorboard logger")
     parser.add_argument("--run_id", type=str, default=generate_id())
     parser.add_argument("--watch_log_freq", type=int, default=10)
     parser.add_argument("--watch_type", type=str, default="None")
@@ -147,9 +110,7 @@ def get_args():
     # ddp setting
     parser.add_argument("--local_rank", type=int)
     parser.add_argument("--world-size", type=int, default=2)
-    parser.add_argument(
-        "--dist-url", default="env://", help="url used to set up distributed training"
-    )
+    parser.add_argument("--dist-url", default="env://", help="url used to set up distributed training")
     parser.add_argument("--dp", action="store_true", default=False)
     parser.add_argument("--ddp", action="store_true", default=False)
     parser.add_argument("-d", "--device", type=str, default="cuda:0")
@@ -186,6 +147,7 @@ def main(local_rank, args):
         else args.network_configs.to_dict()
     )
     network = build_network(full_arch, **network_configs).cuda()
+    # FIXME: may raise compile error
     # network = torch.compile(network)
 
     # parallel or not
@@ -248,9 +210,7 @@ def main(local_rank, args):
     # resume training
     if args.load:
         args.resume = "allow"
-        p = osp.join(
-            args.save_base_path, args.arch + "_" + status_tracker.status["id"] + ".pth"
-        )
+        p = osp.join(args.save_base_path, args.arch + "_" + status_tracker.status["id"] + ".pth")
         if args.resume_total_epochs is not None:
             assert (
                 args.resume_total_epochs == args.epochs
@@ -273,7 +233,7 @@ def main(local_rank, args):
     if is_main_process() and args.logger_on:
         # logger = WandbLogger(args.proj_name, config=args, resume=args.resume,
         #                      id=args.run_id if not args.load else status_tracker.status['id'], run_name=args.run_name)
-        args.logger_config.name += "_" + args.run_id
+        args.logger_config.name += "_" + args.run_id + f'_{args.comment}'
         logger = TensorboardLogger(comment=args.run_id, args=args, file_stream_log=True)
         logger.watch(
             network=network.module if args.ddp else network,
@@ -286,9 +246,9 @@ def main(local_rank, args):
         logger = NoneLogger()
 
     # get datasets and dataloader
-    if args.split_ratio is not None and args.path is not None:
+    if args.split_ratio is not None and args.path is not None and False:  # never reach here
         # FIXME: only support splitting worldview3 datasets
-        # Warning: this code seg should not be reach
+        # Warn: will be decrepated in the next update
         train_ds, val_ds = make_datasets(
             args.path,
             hp=args.hp,
@@ -306,11 +266,28 @@ def main(local_rank, args):
             )
             val_ds = TNODataset(args.path.base_dir, "test", aug_prob=args.aug_probs[1])
 
-        elif args.dataset in ["wv3", "qb", "gf", "hisi"]:
+        elif args.dataset in ["wv3", "qb", "gf2",
+                              "cave_x4", "harvard_x4",
+                              "cave_x8", "harvard_x8",
+                              "hisi-houston"]:
             # the dataset has already splitted
+            
+            # FIXME: 需要兼顾老代码（只有trian_path和val_path）的情况
+            if hasattr(args.path, "train_path") and hasattr(args.path, "val_path"):
+                # 旧代码：手动切换数据集路径
+                train_path = args.path.train_path
+                val_path = args.path.val_path
+            else:  
+                _args_path_keys = list(args.path.__dict__.keys())
+                for k in _args_path_keys: 
+                    if args.dataset in k:
+                        train_path = getattr(args.path, f'{args.dataset}_train_path')
+                        val_path = getattr(args.path, f'{args.dataset}_val_path')
+            assert train_path is not None and val_path is not None, "train_path and val_path should not be None"
+            
             h5_train, h5_val = (
-                h5py.File(args.path.train_path),
-                h5py.File(args.path.val_path),
+                h5py.File(train_path),
+                h5py.File(val_path),
             )
             if args.dataset in ["wv3", "qb"]:
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
@@ -318,28 +295,31 @@ def main(local_rank, args):
                     WV3Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
-            elif args.dataset == "hisi":
-                keys = ["LRHSI", "HSI_up", "RGB", "GT"]
-                d_train, d_val = (
-                    h5py_to_dict(h5_train, keys),
-                    h5py_to_dict(h5_val, keys),
-                )
-                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0])
-                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1])
-            elif args.dataset == "gf":
+            elif args.dataset == "gf2":
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (
                     GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
-                del h5_train, h5_val
+            elif args.dataset[:4] == 'cave' or args.dataset[:7] == 'harvard':
+                keys = ["LRHSI", "HSI_up", "RGB", "GT"]
+                if args.dataset.split('-')[-1] == 'houston':
+                    from einops import rearrange
+                    dataset_fn = lambda x: rearrange(x, 'b h w c -> b c h w')
+                else: dataset_fn = None
+        
+                d_train, d_val = (
+                    h5py_to_dict(h5_train, keys),
+                    h5py_to_dict(h5_val, keys),
+                )
+                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0], dataset_fn=dataset_fn)
+                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1], dataset_fn=dataset_fn)
+                # del h5_train, h5_val
         else:
             raise NotImplementedError(f"not support dataset {args.dataset}")
 
     if args.ddp:
-        train_sampler = torch.utils.data.DistributedSampler(
-            train_ds, shuffle=args.shuffle
-        )
+        train_sampler = torch.utils.data.DistributedSampler( train_ds, shuffle=args.shuffle)
         val_sampler = torch.utils.data.DistributedSampler(val_ds, shuffle=args.shuffle)
     else:
         train_sampler, val_sampler = None, None
@@ -373,6 +353,9 @@ def main(local_rank, args):
         if not osp.exists(args.save_path):
             os.makedirs(args.save_path)
     print("network params are saved at {}".format(args.save_path))
+    
+    # save checker
+    save_checker = BestMetricSaveChecker(metric_name='SAM', check_order='down')
 
     # start training
     with status_tracker:
@@ -390,6 +373,7 @@ def main(local_rank, args):
             logger=logger,
             resume_epochs=args.resume_ep or 1,
             ddp=args.ddp,
+            check_save_fn=save_checker,
             fp16=args.fp16,
             max_norm=args.max_norm,
             grad_accum_ep=args.grad_accum_ep,
@@ -408,8 +392,11 @@ if __name__ == "__main__":
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "5678"
+    os.environ["TRANSFORMERS_CACHE"] = '.cache/transformers'
+    os.environ["MPLCONFIGDIR"] = '.cache/matplotlib'
 
     args = get_args()
     # print(args)
+    
     mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
     # main(0, args)
