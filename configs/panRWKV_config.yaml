@@ -68,10 +68,11 @@ network_configs:
   out_channel: 8
   width: 32
   middle_blk_num: 3
-  enc_blk_nums: [3,3,3]
-  dec_blk_nums: [3,3,3]
-  drop_path_rate: 0.2
+  enc_blk_nums: [2,2,2]
+  dec_blk_nums: [2,2,2]
+  drop_path_rate: 0.1
   stack: no
+  if_rope: no
   patch_merge: yes
   
 logger_config:

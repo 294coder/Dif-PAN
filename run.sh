@@ -41,10 +41,10 @@
 
 ## dcformer arch
 python main.py --proj_name panRWKV --arch panRWKV  \
--b 32 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
+-b 54 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
 --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
 --loss 'l1ssim' --val_n_epoch 10 --comment 'panRWKV wv3' \
---ergas_ratio 4 \
+--ergas_ratio 4 
 # --pretrain --pretrain_id '1x6ucirh' \
 # --save_every_eval
 # --non_load_strict

@@ -1,3 +1,4 @@
+from sympy import false
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -837,24 +838,24 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
-    device = torch.device("cuda:0")
+    device = torch.device("cpu")
     net = ConditionalNAFNet(
-        img_channel=4,
+        img_channel=8,
         condition_channel=1,
-        out_channel=4,
+        out_channel=8,
         width=32,
         middle_blk_num=3,
-        enc_blk_nums=[2, 2, 2],
-        dec_blk_nums=[2, 2, 2],
+        enc_blk_nums=[3]*3,
+        dec_blk_nums=[3]*3,
         pt_img_size=64,
-        if_rope=True,
+        if_rope=False,
         stack=False,
     ).to(device)
 
     img_size = 128
     scale = 4
-    ms = torch.randn(1, 4, img_size, img_size).to(device) 
-    img = torch.randn(1, 4, img_size*scale, img_size*scale).to(device)
+    ms = torch.randn(1, 8, img_size, img_size).to(device) 
+    img = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
     cond = torch.randn(1, 1, img_size*scale, img_size*scale).to(device)
 
     # net = torch.compile(net)
@@ -868,8 +869,6 @@ if __name__ == "__main__":
 
     # print(memory_summary(device=device, abbreviated=False))
     # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
-    
-    # print(parameter_count_table(net))
 
     # net.forward = net._forward_once
     # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))

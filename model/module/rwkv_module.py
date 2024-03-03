@@ -69,7 +69,7 @@ class RWKV_TimeMix_x051a(nn.Module):
         # avoid going below 128 if you are using bf16 (otherwise time_decay might be less accurate).
         #
         if T % 64 == 0: Q = 64
-        elif T % 32 == 0: Q = 32
+        # elif T % 32 == 0: Q = 32
         elif T % 128 == 0: Q = 128
         else:
             Q = T
@@ -85,7 +85,7 @@ class RWKV_TimeMix_x051a(nn.Module):
         r = self.receptance(xr).view(B, T, H, N).transpose(1, 2) # receptance
         k = self.key(xk).view(B, T, H, N).permute(0, 2, 3, 1) # key
         v = self.value(xv).view(B, T, H, N).transpose(1, 2) # value
-        g = F.silu(self.gate(xg)) # extra gate
+        g = F.gelu(self.gate(xg)) # extra gate  # silu here
 
         w = torch.exp(-torch.exp(self.time_decay.float())) # time_decay
         u = self.time_faaaa.float() # time_first

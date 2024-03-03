@@ -205,6 +205,34 @@ class TrainStatusLogger(object):
         return repr
 
 
+import os
+import time
+import logging
+from rich.console import Console
+from rich.logging import RichHandler
+
+def get_time(sec):
+    h = int(sec//3600)
+    m = int((sec//60)%60)
+    s = int(sec%60)
+    return h,m,s
+
+class TimeFilter(logging.Filter):
+
+
+    def filter(self, record):
+        try:
+          start = self.start
+        except AttributeError:
+          start = self.start = time.time()
+
+        time_elapsed = get_time(time.time() - start)
+
+        record.relative = "{0}:{1:02d}:{2:02d}".format(*time_elapsed)
+
+        # self.last = record.relativeCreated/1000.0
+        return True
+
 def get_logger(
     base_path: str = None,
     name: str = None,
@@ -235,17 +263,31 @@ def get_logger(
         #     "[%(asctime)s - %(funcName)s - pid: %(thread)d]-%(levelname)s: %(message)s"
         # )
         format_str = "(%(relative)s - pid: %(thread)d) %(message)s"
+        
     logging.basicConfig(
-        level=std_level, 
-        format=format_str, 
-        datefmt="[%X]",#"%a, %d %b %Y %H:%M:%S"
-        handlers=[RichHandler(show_path=False)]
+        level=logging.INFO,
+        format="(%(relative)s) %(message)s",
+        datefmt="[%X]",
+        force=True,
+        handlers=[
+            RichHandler(show_path=False),
+        ],
     )
+    # https://stackoverflow.com/questions/31521859/python-logging-module-time-since-last-log
+    
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-
-    hdls = []
-
+    hdls = [hndl.addFilter(TimeFilter()) for hndl in logger.handlers]
+        
+    # Warning: decrepted logger config, will be removed in the next update
+    # logging.basicConfig(
+    #     level=std_level, 
+    #     format=format_str, 
+    #     datefmt="[%X]",#"%a, %d %b %Y %H:%M:%S"
+    #     handlers=[RichHandler(show_path=False)]
+    # )
+    # logger = logging.getLogger(name)
+    # logger.setLevel(logging.DEBUG)
+    
     # stream_handler = logging.StreamHandler(sys.stdout)
     # stream_handler.setLevel(std_level)
     # hdls.append(stream_handler)
@@ -263,7 +305,7 @@ def get_logger(
                 print(f"logging: make log file [{os.path.abspath(file_log_dir)}]")
             file_log_path = os.path.join(file_log_dir, n + ".log")
             # file_handler = logging.FileHandler(file_log_path, mode=file_mode)
-            file_console = Console(file=open(file_log_path, 'w'))
+            file_console = Console(file=open(file_log_path, 'w'), width=250)
             file_handler = RichHandler(console=file_console, show_path=False)
             # formatter = logging.Formatter(
             #     "[%(asctime)s - %(name)s] - %(levelname)s: %(message)s"
