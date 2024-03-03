@@ -92,7 +92,7 @@ def val(
             for analysis in _gathered_analysis:
                 for k, v in analysis.acc_ave.items():
                     acc[k] += v * analysis._call_n
-                n += analysis._call_
+                n += analysis._call_n
             for k, v in acc.items():
                 acc[k] = v / n
             acc_ave = acc

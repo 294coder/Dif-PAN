@@ -778,6 +778,7 @@ class ConditionalNAFNet(BaseModel):
         if_rope=False,
         pt_img_size=64,
         drop_path_rate=0.1,
+        scale=4,
         stack=False,
         patch_merge=True,
     ):
@@ -790,7 +791,7 @@ class ConditionalNAFNet(BaseModel):
         self.rope = if_rope
         self.pt_img_size = pt_img_size
         # self.square_relu = SquareReLU()
-
+        self.scale = scale
         self.stack = stack
 
         # self.time_mlp = nn.Sequential(
@@ -930,8 +931,8 @@ class ConditionalNAFNet(BaseModel):
         # for patch merging if the image is too large       
         self.patch_merge = patch_merge 
         if patch_merge:
-            self._patch_merge_model = PatchMergeModule(self, crop_batch_size=64, patch_size_list=[16, 64, 64], scale=4,
-                                                       patch_merge_step=self.patch_merge_step)
+            self._patch_merge_model = PatchMergeModule(self, crop_batch_size=64, patch_size_list=[16, 16*self.scale, 16*self.scale],
+                                                       scale=self.scale, patch_merge_step=self.patch_merge_step)
             
         # init
         self.apply(self._init_weights)
