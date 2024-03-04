@@ -40,11 +40,11 @@
 #  --pretrain --pretrain_id '2o663zwh' #--non_load_strict
 
 ## dcformer arch
-python main.py --proj_name panRWKV --arch panRWKV  \
--b 22 --device 'cuda:0' --dataset 'harvard_x8' --log_metrics \
---warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
---loss 'l1ssim' --val_n_epoch 10 --comment 'panRWKV harvard x8' \
---ergas_ratio 8
+python main.py --proj_name lformer_eccv --arch lformer --sub_arch ablation_skip \
+-b 64 --device 'cuda:1' --dataset 'wv3' --logger_on --log_metrics \
+--warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+--loss 'l1ssim' --val_n_epoch 10 --comment 'lformer ablation skip on WV3 dataset' \
+--ergas_ratio 4
 # --pretrain --pretrain_id '1x6ucirh' \
 # --save_every_eval
 # --non_load_strict

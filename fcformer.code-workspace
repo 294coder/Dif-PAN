@@ -4,10 +4,10 @@
 			"path": "."
 		},
 		{
-			"path": "../../dataset"
+			"path": "../../datasets"
 		},
 		{
-			"path": "../effiecient_RWKV_mamba"
+			"path": "../efficient-RWKV-Vmamba"
 		}
 	],
 	"settings": {

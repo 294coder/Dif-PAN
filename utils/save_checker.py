@@ -18,7 +18,8 @@ class BestMetricSaveChecker:
         else: default_best_metric_val = np.Inf
 
         self._best_metric = default_best_metric_val
-        self._check_fn = lambda new, old: new > old if check_order=='up' else lambda old, new: new <= old
+        self._check_fn = (lambda new, old: new > old) if check_order=='up' else \
+                         (lambda new, old: new <= old)
         
     def __call__(self, val_metrics: dict[str, float], *args):
         assert self.metric_name in val_metrics.keys(), f'@metric_name {self.metric_name} should in @val_metrics, but got {val_metrics}'
@@ -36,16 +37,16 @@ class BestMetricSaveChecker:
     
     
 if __name__ == '__main__':
-    checker = BestMetricSaveChecker('psnr')
+    checker = BestMetricSaveChecker('sam', 'down')
     
-    val_d1 = {'psnr': 10, 'ssim':0.8}
-    val_d2 = {'psnr': 12, 'ssim':0.9}
+    val_d1 = {'sam': 2.3, 'psnr': 10, 'ssim':0.8}
+    val_d2 = {'sam': 2.4, 'psnr': 12, 'ssim':0.9}
     
     print(checker.best_metric)
     print(checker.metric_name)
     
-    checker(val_d1)
+    print(checker(val_d1))
     print(checker.best_metric)
     
-    checker(val_d2)
+    print(checker(val_d2))
     print(checker.best_metric)

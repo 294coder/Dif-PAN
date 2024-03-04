@@ -49,30 +49,9 @@ def get_args():
     parser.add_argument("-e", "--epochs", type=int, default=500)
     parser.add_argument("--val_n_epoch", type=int, default=30)
     parser.add_argument("--warm_up_epochs", type=int, default=80)
-    parser.add_argument(
-        "-l",
-        "--loss",
-        type=str,
-        default="mse",
-        choices=[
-            "mse",
-            "l1",
-            "hybrid",
-            "smoothl1",
-            "l1ssim",
-            "charbssim",
-            "ssimsf",
-            "ssimmci",
-            "mcgmci",
-            "ssimrmi_fuse",
-            "pia_fuse",
-            "u2fusion",
-            "swinfusion",
-            "hpm",
-            "none",
-            "None",
-        ],
-    )
+    parser.add_argument("-l", "--loss", type=str, default="mse", 
+                        choices=["mse", "l1", "hybrid", "smoothl1", "l1ssim", "charbssim", "ssimsf",
+                                 "ssimmci", "mcgmci", "ssimrmi_fuse"," pia_fuse", "u2fusion"," swinfusion", "hpm", "none", "None",])
     parser.add_argument("--grad_accum_ep", type=int, default=None)
     parser.add_argument("--save_every_eval", action="store_true", default=False)
 
@@ -95,7 +74,7 @@ def get_args():
     parser.add_argument("--aug_probs", nargs="+", type=float, default=[0.0, 0.0])
     parser.add_argument("-s", "--seed", type=int, default=3407)
     parser.add_argument("-n", "--num_worker", type=int, default=8)
-    parser.add_argument("--ergas_ratio", type=int, choices=[4, 8], default=4)
+    parser.add_argument("--ergas_ratio", type=int, choices=[2, 4, 8, 16, 20], default=4)
 
     # logger config
     parser.add_argument("--logger_on", action="store_true", default=False)

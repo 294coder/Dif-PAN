@@ -236,23 +236,30 @@ def train(
                     model, val_dl, criterion, logger, ep, optim_val_loss, args
                 )
             model.train()
-            params = {}
-            # try:
-            #     params["model"] = model.module.state_dict()
-            # except Exception:  # any threw error
-            #     params["model"] = model.state_dict()
-            params["model"] = model_params(model)
-            params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
-            params["epochs"] = ep
-            params["optim"] = optim.state_dict()
-            params["lr_scheduler"] = lr_scheduler.state_dict()
-            params["metrics"] = val_acc_dict
+            
+            def collect_params():
+                params = {}
+                # try:
+                #     params["model"] = model.module.state_dict()
+                # except Exception:  # any threw error
+                #     params["model"] = model.state_dict()
+                params["model"] = model_params(model)
+                params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
+                params["epochs"] = ep
+                params["optim"] = optim.state_dict()
+                params["lr_scheduler"] = lr_scheduler.state_dict()
+                params["metrics"] = val_acc_dict
+                
+                return params
+            
             if not args.save_every_eval:
-                if save_checker(val_acc_dict, val_loss, optim_val_loss) and is_main_process():
+                params = collect_params()
+                if save_checker(val_acc_dict, val_loss, optim_val_loss) == True and is_main_process():
                     torch.save(params, save_path)
                     optim_val_loss = val_loss
                     logger.print("save params")
             else:
+                params = collect_params()
                 # TODO: 将同一个id的权重存在一个文件夹中，还需要考虑重新load训练的问题
                 p = os.path.join(save_path, f'ep_{ep}.pth')
                 torch.save(params, p)
