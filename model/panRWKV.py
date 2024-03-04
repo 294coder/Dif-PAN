@@ -838,24 +838,24 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
-    device = torch.device("cpu")
+    device = torch.device("cuda:2")
     net = ConditionalNAFNet(
-        img_channel=8,
+        img_channel=31,
         condition_channel=1,
-        out_channel=8,
+        out_channel=31,
         width=32,
-        middle_blk_num=3,
-        enc_blk_nums=[3]*3,
-        dec_blk_nums=[3]*3,
+        middle_blk_num=2,
+        enc_blk_nums=[2]*3,
+        dec_blk_nums=[2]*3,
         pt_img_size=64,
         if_rope=False,
         stack=False,
     ).to(device)
 
-    img_size = 128
+    img_size = 16
     scale = 4
-    ms = torch.randn(1, 8, img_size, img_size).to(device) 
-    img = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
+    ms = torch.randn(1, 31, img_size, img_size).to(device) 
+    img = torch.randn(1, 31, img_size*scale, img_size*scale).to(device)
     cond = torch.randn(1, 1, img_size*scale, img_size*scale).to(device)
 
     # net = torch.compile(net)
@@ -864,11 +864,11 @@ if __name__ == "__main__":
     # print(out.shape)
     
     # test patch merge
-    sr = net.val_step(ms, img, cond)
-    print(sr.shape)
+    # sr = net.val_step(ms, img, cond)
+    # print(sr.shape)
 
     # print(memory_summary(device=device, abbreviated=False))
-    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    # net.forward = net._forward_once
-    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    net.forward = net._forward_once
+    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))

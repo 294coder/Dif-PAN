@@ -3,6 +3,7 @@
 /*/__pycache__/
 /*/*/__pycache__/
 /.idea
+/.cache/
 /ir_TNO/
 
 /.history/
@@ -21,6 +22,7 @@
 /.aim/
 /runs/
 /Matlab-Test-Package/
+
 HyperSpectralToolbox/
 fc-former.zip
 _test.py

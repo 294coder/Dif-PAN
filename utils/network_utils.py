@@ -84,6 +84,13 @@ def model_params(model):
         model = model._orig_mod
     return model.state_dict()
 
+def model_device(model: Union[nn.Module, nn.DataParallel, 
+                              nn.parallel.DistributedDataParallel,
+                              torch._dynamo.eval_frame.OptimizedModule]):
+    params = model.parameters()
+    p0 = next(params)
+    return p0.device
+
 
 def clip_norm(max_norm, network, fp_scaler=None, optim=None):
     if fp_scaler is not None:
