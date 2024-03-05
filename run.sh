@@ -33,18 +33,18 @@
 
 
 ## panMamba arch
- python main.py --proj_name PanMamba --arch panRWKV \
- -b 22 --device 'cuda:1' --dataset 'cave_x8' \
- --warm_up_epochs 10 --num_worker 0 -e 4000 --aug_probs 0. 0. \
- --loss l1ssim --val_n_epoch 10 --comment 'mamba on cave x8 dataset' \
- --logger_on --log_metrics \
+python main.py --proj_name PanMamba --arch panMamba \
+-b 60 --device 'cuda:2' --dataset 'qb' \
+--warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 10 --comment 'mamba on qb dataset' \
+--logger_on --log_metrics \
 #  --pretrain --pretrain_id 'lku1i1ug' #--non_load_strict
 
 ## dcformer arch
-# python main.py --proj_name lformer_eccv --arch lformer --sub_arch ablation_skip \
-# -b 64 --device 'cuda:1' --dataset 'wv3' --logger_on --log_metrics \
+# python main.py --proj_name lformer_eccv --arch lformer \
+# -b 64 --device 'cuda:0' --dataset 'wv3' --logger_on --log_metrics \
 # --warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
-# --loss 'l1ssim' --val_n_epoch 10 --comment 'lformer ablation skip on WV3 dataset' \
+# --loss 'l1ssim' --val_n_epoch 10 --comment 'lformer on WV3 dataset' \
 # --ergas_ratio 4
 # --pretrain --pretrain_id '1x6ucirh' \
 # --save_every_eval

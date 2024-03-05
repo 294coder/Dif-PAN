@@ -9,7 +9,7 @@ lr_scheduler:
   gamma: 0.1
 #  name: 'identity'
 
-max_norm: 0.003
+max_norm: 0.03
 ema_decay: 0.999
 
 path:
@@ -28,7 +28,7 @@ network_configs:
   #   n_stage: 5
   lformer:
     pan_dim: 1
-    lms_dim: 145 #102 #128
+    lms_dim: 8 #102 #128
     attn_dim: 64
     hp_dim: 64
     n_stage: 5

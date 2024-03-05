@@ -7,7 +7,9 @@ from beartype import beartype
 from typing import Tuple, List, Dict, Union, Optional, Any
 
 from model.base_model import register_model, BaseModel
+from utils import get_local
 
+get_local.activate()
 
 def exists(x):
     return x is not None
@@ -84,9 +86,11 @@ class ReflashAttn(nn.Module):
     def __init__(self, nhead=8, ksize=3):
         super().__init__()
         self.body = nn.Sequential(
-            nn.Conv2d(nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False),
+            nn.Conv2d(
+                nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False
+            ),
             nn.Conv2d(nhead, nhead, 1, bias=True),
-            nn.ReLU()
+            nn.ReLU(),
         )
         self.body[0].weight.data.fill_(1.0 / (ksize * ksize))
         self.body[1].weight.data.fill_(1.0)
@@ -100,9 +104,10 @@ class ReflashAttn(nn.Module):
 # 1. 不加resblock换v
 # 2. 加上resblok不换v
 
+
 class AttnFuse(nn.Module):
     def __init__(
-            self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False
+        self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False
     ) -> None:
         super().__init__()
         self.nheads = nheads
@@ -140,6 +145,7 @@ class AttnFuse(nn.Module):
 
         self.attn_drop = nn.Dropout(attn_drop)
 
+    @get_local("attn", "out")
     def forward(self, lms, pan):
         *_, h, w = lms.shape
 
@@ -172,7 +178,7 @@ class MSReversibleRefine(nn.Module):
             nn.Sequential(
                 nn.Conv2d(dim, dim, 3, 1, 1, groups=dim),
                 nn.ReLU(),
-                nn.Conv2d(dim, dim, 1)
+                nn.Conv2d(dim, dim, 1),
                 # nn.BatchNorm2d(dim),
             )
         )
@@ -182,13 +188,17 @@ class MSReversibleRefine(nn.Module):
         self.nhead = nhead
         self.first_stage = first_stage
 
+    @get_local("reflashed_attn", "reflashed_out")
     def forward(self, reuse_attn, lms, hp_in):
         *_, h, w = lms.shape
 
         if not self.first_stage:
             lms = rearrange(lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
             reuse_attn = self.reflash_attn(reuse_attn)
-            refined_lms = torch.einsum("b h d e, b h e m -> b h d m", reuse_attn, lms)  # (lms x pan) x lms
+
+            refined_lms = torch.einsum(
+                "b h d e, b h e m -> b h d m", reuse_attn, lms
+            )  # (lms x pan) x lms
             refined_lms = rearrange(
                 refined_lms,
                 "b nhead c (h w) -> b (nhead c) h w",
@@ -198,13 +208,16 @@ class MSReversibleRefine(nn.Module):
             )
         else:
             refined_lms = lms
-
+            
+        reflashed_attn = reuse_attn
+        reflashed_out = refined_lms
+        
         refined_lms = self.res_block(refined_lms)
 
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
         out = self.fuse_conv(reverse_out)
 
-        return out
+        return reuse_attn, out
 
 
 class PreHp(nn.Module):
@@ -252,7 +265,7 @@ class HpBranch(nn.Module):
             nn.Sequential(
                 nn.Conv2d(hp_dim, hp_dim, 3, 1, 1, groups=hp_dim),
                 nn.ReLU(),
-                nn.Conv2d(hp_dim, hp_dim, 1)
+                nn.Conv2d(hp_dim, hp_dim, 1),
                 # nn.BatchNorm2d(hp_dim),
             )
         )
@@ -264,11 +277,20 @@ class HpBranch(nn.Module):
         return hp_out
 
 
-@register_model("lformer_ablation_skip")
+@register_model("lformer")
 class AttnFuseMain(BaseModel):
-    def __init__(self, pan_dim, lms_dim, attn_dim, hp_dim, n_stage=3,
-                 patch_merge=True, crop_batch_size=1, patch_size_list=None,
-                 scale=4) -> None:
+    def __init__(
+        self,
+        pan_dim,
+        lms_dim,
+        attn_dim,
+        hp_dim,
+        n_stage=3,
+        patch_merge=True,
+        crop_batch_size=1,
+        patch_size_list=None,
+        scale=4,
+    ) -> None:
         super().__init__()
         self.n_stage = n_stage
 
@@ -289,12 +311,13 @@ class AttnFuseMain(BaseModel):
         self.final_conv = nn.Sequential(
             Resblock(hp_dim + attn_dim),
             Resblock(hp_dim + attn_dim),
-            nn.Conv2d(hp_dim + attn_dim, lms_dim, 1)
+            nn.Conv2d(hp_dim + attn_dim, lms_dim, 1),
         )
-        
+
         self.patch_merge = patch_merge
         if patch_merge:
             from model.base_model import PatchMergeModule
+
             self._patch_merge_model = PatchMergeModule(
                 # net=self,
                 patch_merge_step=self.patch_merge_step,
@@ -309,7 +332,8 @@ class AttnFuseMain(BaseModel):
         # print(reused_attn.shape)
         for i in range(self.n_stage):
             reversed_out = self.hp_branch[i](refined_lms, pre_hp)
-            refined_lms = self.refined_blocks[i](reused_attn, refined_lms, reversed_out)
+            # TODO: update reused_attn or not
+            _reused_attn, refined_lms = self.refined_blocks[i](reused_attn, refined_lms, reversed_out)
 
         out = self.hp_branch[-1](refined_lms, pre_hp)
         out = torch.cat([out, refined_lms], dim=1)
@@ -325,15 +349,15 @@ class AttnFuseMain(BaseModel):
         loss = criterion(out, gt)
         return out.clip(0, 1), loss
 
-    def val_step(self, ms, lms, pan):
-        if self.patch_merge:
+    def val_step(self, ms, lms, pan, patch_merge=True):
+        if self.patch_merge and patch_merge:
             pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
         else:
             pred = self._forward_implem(lms, pan)
         out = pred + lms
 
         return out.clip(0, 1)
-    
+
     def patch_merge_step(self, ms, lms, pan):
         return self._forward_implem(lms, pan)
 
@@ -342,7 +366,6 @@ if __name__ == "__main__":
     from fvcore.nn import FlopCountAnalysis, flop_count_table
     from functools import partial
 
-
     # w/o smrb ahead qkv
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
@@ -350,30 +373,41 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 102, 16, 16).cuda(1) 
-    lms = torch.randn(1, 102, 64, 64).cuda(1)
-    pan = torch.randn(1, 1, 64, 64).cuda(1)
+    ms = torch.randn(1, 31, 16, 16).cuda(1)
+    lms = torch.randn(1, 31, 64, 64).cuda(1)
+    pan = torch.randn(1, 3, 64, 64).cuda(1)
 
-    net = AttnFuseMain(pan_dim=3, lms_dim=128, attn_dim=64, hp_dim=64, n_stage=5,
-                       patch_merge=False, patch_size_list=[16,64,64], scale=4,
-                       crop_batch_size=32).cuda(1)
+    net = AttnFuseMain(
+        pan_dim=3,
+        lms_dim=31,
+        attn_dim=64,
+        hp_dim=64,
+        n_stage=5,
+        patch_merge=False,
+        patch_size_list=[16, 64, 64],
+        scale=4,
+        crop_batch_size=32,
+    ).cuda(1)
     net.forward = partial(_only_for_flops_count_forward, net)
+
     # sr = net.val_step(ms, lms, pan)
+    sr = net._forward_implem(lms, pan)
     # print(sr.shape)
-    
-    
+
     # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)
-    
-    
+
     ## dataset: num_channel HSI/PAN
     # Pavia: 102/1
     # botswana: 145/1
     # chikusei: 128/3
-    
-    num_p = 0
-    for p in net.parameters():
-        if p.requires_grad:
-            num_p += p.numel()
-            
-    print(num_p/1e6)
+
+    # num_p = 0
+    # for p in net.parameters():
+    #     if p.requires_grad:
+    #         num_p += p.numel()
+
+    # print(num_p/1e6)
+
+    cache = get_local.cache
+    print(cache)

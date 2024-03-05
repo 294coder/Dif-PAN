@@ -42,7 +42,7 @@ def get_args():
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
     parser.add_argument(
-        "--sub_arch", default=None, help="panformer sub-architecture name"
+        "--sub_arch", default='none', help="panformer sub-architecture name"
     )
 
     # train config
@@ -154,14 +154,8 @@ def main(local_rank, args):
         print(args)
 
     # define network
-    full_arch = (
-        args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
-    )
-    network_configs = (
-        eval(f"args.network_configs.{full_arch}").to_dict()
-        if args.sub_arch is not None
-        else args.network_configs.to_dict()
-    )
+    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is None else args.arch
+    network_configs = getattr(args.network_configs, full_arch, args.network_configs).to_dict()
     network = build_network(full_arch, **network_configs).cuda()
     # FIXME: may raise compile error
     # network = torch.compile(network)
@@ -389,7 +383,7 @@ def main(local_rank, args):
     print("network params are saved at {}".format(args.save_path))
 
     # save checker
-    save_checker = BestMetricSaveChecker(metric_name="SAM", check_order="down")
+    save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
 
     # start training
     with status_tracker:
@@ -432,5 +426,5 @@ if __name__ == "__main__":
     args = get_args()
     # print(args)
 
-    # mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
-    main(0, args)
+    mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
+    # main(0, args)

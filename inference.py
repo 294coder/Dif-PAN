@@ -21,16 +21,17 @@ from utils import (
     unref_for_loop,
     ref_for_loop,
     config_py_load,
+    module_load
 )
 from utils.visualize import invert_normalized
 
 device = "cuda:2"
 torch.cuda.set_device(device)
-dataset_type = "wv2"
+dataset_type = "wv3"
 save_format = "mat"
 full_res = False
 split_patch = False
-patch_size = 1000
+patch_size = 16
 ergas_ratio = 4
 patch_size_list = [
     patch_size // ergas_ratio,
@@ -54,8 +55,8 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "dcformer"
-subarch = "mwsa_new"
+name = "lformer"
+subarch = ""
 dl_bs = 1
 crop_bs = 2
 
@@ -102,6 +103,10 @@ print("=" * 50)
 # p = './weight/dcformer_1g9ljhul.pth'  # dcformer_mwsa wx 8 CAttn
 
 # p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
+
+# p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
+p = "./weight/lformer_dcu45ddw.pth"  # lformer
+
 # ========================================================
 
 # ================HISI CAVE checkpoint=============
@@ -279,22 +284,22 @@ else:
 
 # model = VanillaPANNet(8, 32).to('cuda:0')
 
-if name in ["panformer", "dcformer"]:
-    config = yaml_load(name)
-    full_arch = name + "_" + subarch
+config = yaml_load(name)
+if name in ["panformer", "dcformer", "lformer"]:
+    full_arch = name + "_" + subarch if subarch != "" else name
     model = build_network(full_arch, **config["network_configs"][full_arch])
 else:
-    config = yaml_load(name)
     model = build_network(name, **config["network_configs"])
 
 # -------------------load params-----------------------
-params = torch.load(p, map_location=device)
+# params = torch.load(p, map_location=device)
 # odict = OrderedDict()
 # for k, v in params['model'].items():
 #    odict['module.' + k] = v
 
 
-model.load_state_dict(params["model"])
+# model.load_state_dict(params["model"])
+model = module_load(p, model, device, strict=True)
 model = model.to(device)
 model.eval()
 # -----------------------------------------------------

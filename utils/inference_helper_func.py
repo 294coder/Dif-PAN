@@ -99,7 +99,7 @@ def ref_for_loop(model,
             sr = model.forward_chop(*input)[0]
         # read images just once
         else:
-            sr = model.val_step(ms, lms, pan)
+            sr = model.val_step(ms, lms, pan, False)
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
