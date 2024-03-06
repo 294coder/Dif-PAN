@@ -11,19 +11,21 @@ lr_scheduler:
   #  eta_min: !!float 1e-9
   #  T_max: 2000
   #  eta_min: !!float 1e-8
-  # name: "plateau"
-  # mode: "min"
-  # threshold: !!float 1e-6 # l1
-  # min_lr: !!float 1e-8
-  # patience: 50
-  # factor: !!float 0.2
-  # cooldown: 50
-  name: "multi_step"
-  milestones: [100, 1500] #[100, 800]
-  gamma: 0.1
+
+  name: "plateau"
+  mode: "min"
+  threshold: !!float 5e-6 # l1
+  min_lr: !!float 1e-6
+  patience: 100
+  factor: !!float 0.2
+  cooldown: 40
+
+  # name: "multi_step"
+  # milestones: [100] #[100, 800]
+  # gamma: 0.1
 
 max_norm: 0.03
-ema_decay: 0.999
+ema_decay: 0.995
 
 path:
   wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
@@ -51,20 +53,20 @@ path:
   harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
 network_configs:
-  img_channel: 4
-  condition_channel: 1
-  out_channel: 4
-  width: 32
-  middle_blk_num: 2
-  enc_blk_nums: [2, 2, 2]
-  dec_blk_nums: [2, 2, 2]
+  img_channel: 31
+  condition_channel: 3
+  out_channel: 31
+  width: 16
+  middle_blk_num: 1
+  enc_blk_nums: [1, 2, 2]
+  dec_blk_nums: [1, 2, 2]
   ssm_convs: [11, 11, 11] #[11,11,11]
-  drop_path_rate: 0.1
+  drop_path_rate: 0.2
   if_abs_pos: no # buggy: convergence is slow
   if_rope: no
-  scale: 4
   stack: no
-  patch_merge: no
+  patch_merge: yes
+  upscale: 8
 
 logger_config:
   base_path: ./log_file/

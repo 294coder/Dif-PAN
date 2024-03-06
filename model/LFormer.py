@@ -9,7 +9,7 @@ from typing import Tuple, List, Dict, Union, Optional, Any
 from model.base_model import register_model, BaseModel
 from utils import get_local
 
-get_local.activate()
+# get_local.activate()
 
 def exists(x):
     return x is not None
