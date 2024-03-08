@@ -1134,31 +1134,31 @@ if __name__ == '__main__':
     
     net = GPPNN(8, 1, 32, 8)#.cuda()
     
-    ms = torch.randn(1, 8, 64, 64)#.cuda()
-    pan = torch.randn(1, 1, 256, 256)#.cuda()
+    ms = torch.randn(1, 8, 16, 16)#.cuda()
+    pan = torch.randn(1, 1, 64, 64)#.cuda()
     
     # print(net(ms, pan).shape)
     
     def forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
     
-    net.forward = partial(forward, net)
-    avg = 0.
-    for n in range(20):
-        s = time.time()
-        net(ms, pan)
-        e = time.time()
-        avg += e - s
+    # net.forward = partial(forward, net)
+    # avg = 0.
+    # for n in range(20):
+    #     s = time.time()
+    #     net(ms, pan)
+    #     e = time.time()
+    #     avg += e - s
         
-    print(avg/20)
+    # print(avg/20)
     
     
     
+    net.forward = net._forward_implem
     
-    
-    # print(
-    #     flop_count_table(FlopCountAnalysis(net, (ms, pan)))
-    # )
+    print(
+        flop_count_table(FlopCountAnalysis(net, (ms, pan)))
+    )
     
     
     

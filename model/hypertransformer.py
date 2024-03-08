@@ -833,7 +833,7 @@ class HyperTransformer(BaseModel):
 # We pre-train this model first and then train the above model with pre-trained weights
 @register_model('hypertransformer_pre')
 class HyperTransformerPre(BaseModel):
-    def __init__(self, config):
+    def __init__(self,):
         super(HyperTransformerPre, self).__init__()
         self.is_DHP_MS      = False #config["is_DHP_MS"]
         self.in_channels    = 31 #config[config["train_dataset"]]["spectral_bands"]
@@ -1004,7 +1004,7 @@ if __name__ == '__main__':
     
     net = HyperTransformerPre().cuda()
 
-    img_size = 64
+    img_size = 128
     factor = 4
     ms = torch.randn(1, 31, img_size, img_size).cuda()
     lms = torch.randn(1, 31, img_size, img_size).cuda()
@@ -1018,7 +1018,19 @@ if __name__ == '__main__':
     # loss = nn.MSELoss()(sr, gt)
     # loss.backward()
     
-    print(memory_summary())
+    # print(memory_summary())
+    
+    import time
+    # net.eval()
+    
+    t1 = time.time()    
+    for i in range(20):
+        # with torch.no_grad():
+        sr = net._forward_implem(ms, pan)
+            # print(sr.shape)
+            
+    t2 = time.time()
+    print((t2-t1)/20)
     
     # out = net(ms,pan)
     # for k,v in out.items():

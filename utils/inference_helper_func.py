@@ -22,7 +22,7 @@ from .visualize import viz_batch, res_image, percent_norm
 from .metric import AnalysisPanAcc
 from model.base_model import BaseModel, PatchMergeModule
 
-from model.LFormer import _get_feat
+# from model.LFormer import _get_feat
 
 
 @torch.no_grad()
@@ -105,21 +105,21 @@ def ref_for_loop(model,
             sr = model.val_step(ms, lms, pan)
         
         ################################# FEATURES PLOT ######################################
-        lformer_feats = _get_feat()  # lformer_feats[0][0].mean(1, keepdim=True)
-        fig, axes = plt.subplots(2, 5, figsize=(15, 6))
-        add_s = torch.linspace(1, 1.8, steps=5)
-        for ii in range(len(lformer_feats)):
-            for jj in range(2):
-                f =  lformer_feats[ii][jj]
-                f = percent_norm(f, m=add_s[ii])
-                # print(f'{ii}, {jj} -> ', f.shape)  # lformer_feats[ii][jj].mean(1).keepdim(True)
+        # lformer_feats = _get_feat()  # lformer_feats[0][0].mean(1, keepdim=True)
+        # fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+        # add_s = torch.linspace(1, 1.8, steps=5)
+        # for ii in range(len(lformer_feats)):
+        #     for jj in range(2):
+        #         f =  lformer_feats[ii][jj]
+        #         f = percent_norm(f, m=add_s[ii])
+        #         # print(f'{ii}, {jj} -> ', f.shape)  # lformer_feats[ii][jj].mean(1).keepdim(True)
                 
-                axes[jj, ii].imshow(f[0].mean(0).detach().cpu().numpy(), cmap='viridis')
-                axes[jj, ii].set_title(f'({ii}, {jj})')
-                axes[jj, ii].axis('off')
+        #         axes[jj, ii].imshow(f[0].mean(0).detach().cpu().numpy(), cmap='viridis')
+        #         axes[jj, ii].set_title(f'({ii}, {jj})')
+        #         axes[jj, ii].axis('off')
                 
-        plt.tight_layout()
-        fig.savefig(f'visualized_img/feature_show/cave/index_{i}.png', bbox_inches='tight', dpi=200)
+        # plt.tight_layout()
+        # fig.savefig(f'visualized_img/feature_show/cave/index_{i}.png', bbox_inches='tight', dpi=200)
         #######################################################################################
         
         # lformer_attn = _get_feat()

@@ -6,8 +6,8 @@ from einops import rearrange
 from beartype import beartype
 from typing import Tuple, List, Dict, Union, Optional, Any
 
-from utils.visualize import get_local
-get_local.activate()
+# from utils.visualize import get_local
+# get_local.activate()
 
 from model.base_model import register_model, BaseModel
 
@@ -84,10 +84,12 @@ class ReflashValue(nn.Module):
 
 
 class ReflashAttn(nn.Module):
-    def __init__(self, nhead=8, ksize=5):
+    def __init__(self, nhead=8, ksize=5, kform='2d'):
         super().__init__()
+        ksizes = (ksize, ksize) if kform == '2d' else (1, ksize)
+        paddings = (ksize // 2, ksize // 2) if kform == '2d' else (0, ksize // 2)
         self.body = nn.Sequential(
-            nn.Conv2d(nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False),
+            nn.Conv2d(nhead, nhead, ksizes, stride=1, padding=paddings, bias=False),
             nn.Conv2d(nhead, nhead, 1, bias=True),
             nn.ReLU()
         )
@@ -185,7 +187,7 @@ class MSReversibleRefine(nn.Module):
         self.nhead = nhead
         self.first_stage = first_stage
 
-    @get_local('refined_lms', 'out')
+    # @get_local('refined_lms', 'out')
     # @get_local('reuse_attn')
     def forward(self, reuse_attn, lms, hp_in):
         *_, h, w = lms.shape
@@ -334,6 +336,8 @@ class AttnFuseMain(BaseModel):
         loss = criterion(out, gt)
         return out.clip(0, 1), loss
 
+    @torch.inference_mode()
+    @torch.no_grad()
     def val_step(self, ms, lms, pan):
         if self.patch_merge:
             pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
@@ -347,12 +351,12 @@ class AttnFuseMain(BaseModel):
         return self._forward_implem(lms, pan)
     
     
-def _get_feat(key='MSReversibleRefine.forward'):
-    cache = get_local.cache
-    refined_feat = cache[key]
-    get_local.clear()
+# def _get_feat(key='MSReversibleRefine.forward'):
+#     cache = get_local.cache
+#     refined_feat = cache[key]
+#     get_local.clear()
     
-    return refined_feat
+#     return refined_feat
 
 
 if __name__ == "__main__":
@@ -366,20 +370,33 @@ if __name__ == "__main__":
 
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
+    
+    img_size = 128
+    scale = 4
 
-    ms = torch.randn(1, 8, 64, 64).cuda(1) 
-    lms = torch.randn(1, 8, 256, 256).cuda(1)
-    pan = torch.randn(1, 1, 256, 256).cuda(1)
+    ms = torch.randn(1, 31, img_size, img_size).cuda(1) 
+    lms = torch.randn(1, 31, img_size * scale, img_size * scale).cuda(1)
+    pan = torch.randn(1, 3, img_size * scale, img_size * scale).cuda(1)
 
-    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5,
+    net = AttnFuseMain(pan_dim=3, lms_dim=31, attn_dim=64, hp_dim=64, n_stage=5,
                        patch_merge=False, patch_size_list=[16,64,64], scale=4,
                        crop_batch_size=32).cuda(1)
     net.forward = partial(_only_for_flops_count_forward, net)
     
-    # for _ in range(3):
-    print('=='*50)
-    sr = net.val_step(ms, lms, pan)
+    # sr = net.val_step(ms, lms, pan)
     # print(sr.shape)
+    
+    import time
+    
+    net = torch.compile(net)
+    t1 = time.time()
+    for _ in range(20):
+        with torch.no_grad():
+            sr = net.val_step(ms, lms, pan)
+    t2 = time.time()
+    
+    print((t2-t1)/20)
+    
     
     # cache = get_local.cache
     # cache = _get_feat()
@@ -390,7 +407,7 @@ if __name__ == "__main__":
     #         print(cache[i][j].shape)
     # pass
     
-    
+    # net.forward = net._forward_implem
     # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)
     

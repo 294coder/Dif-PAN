@@ -12,6 +12,9 @@
 		{
 			"path": "/Data3/cao/ZiHanCao/exps/TSP/panformer/",
 			"name": "panformer-2"
+		},
+		{
+			"path": "../../viz_fc_former"
 		}
 	],
 	"settings": {

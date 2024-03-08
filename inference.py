@@ -28,7 +28,7 @@ from utils.visualize import invert_normalized
 device = "cuda:0"
 torch.cuda.set_device(device)
 # path = '/Data2/DataSet/pansharpening/test1_mulExm1258.mat'
-dataset_type = "cave"
+dataset_type = "wv3"
 save_format = "mat"
 full_res = False
 split_patch = False
@@ -105,6 +105,8 @@ print("=" * 50)
 # p = './weight/dcformer_a6it872k.pth'
 
 # p = './weight/lformer_wv3_ep_1000.pth'  # lformer
+# p = './weight/lformer_cvpr_flatten_transformer_ch34qg40.pth'  # lformer replace the linear-evolved blocks with flatten transformer blocks
+p = './weight/lformer_lzg5hg0l.pth'  # lformer 2d reflash attn
 
 # p = './weight/gppnn_104ji7i6.pth'  # gppnn
 # ========================================================
@@ -120,7 +122,7 @@ print("=" * 50)
 # p = './weight/dcformer_1dpmi7w6/ep_30.pth'  # dcformer_mwsa PSNR: 51.39 (r)
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer_mwsa wx 8 CAttn
 
-p = './weight/lformer_29sq5or9.pth'  # lformer
+# p = './weight/lformer_29sq5or9.pth'  # lformer
 
 # p = './weight/hyper_transformer_1z5nq51u.pth'  # hypertransformer
 # p = './weight/hyper_transformer_r0p6psfx.pth'  # hyper_transformer
