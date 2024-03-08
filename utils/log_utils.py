@@ -208,11 +208,13 @@ class TrainStatusLogger(object):
 def get_logger(
     base_path: str = None,
     name: str = None,
+    args=None,
     std_level=logging.INFO,
     file_level: Union[tuple, int] = (logging.DEBUG,),
     file_handler_names: Union[tuple, str] = ("debug",),
     file_mode: str = "w",
     show_pid: bool = False,
+    method_dataset_as_prepos=True,
 ):
     """
     get logger to log
@@ -257,7 +259,10 @@ def get_logger(
         ), "@param file_handler_names and @param file_level \
             should be list and equal length"
         for n, level in zip(file_handler_names, file_level):
-            file_log_dir = os.path.join(base_path, name)
+            if method_dataset_as_prepos:
+                file_log_dir = os.path.join(base_path, args.full_arch, args.dataset, name)
+            else:
+                file_log_dir = os.path.join(base_path, name)
             if not os.path.exists(file_log_dir):
                 os.makedirs(file_log_dir)
                 print(f"logging: make log file [{os.path.abspath(file_log_dir)}]")
@@ -386,9 +391,11 @@ class TensorboardLogger:
         args=None,
         tsb_logdir=None,
         comment=None,
-        file_stream_log=False,
+        file_stream_log=True,
+        # TODO: yaml file or json file for config
         config_file_mv="./configs",
         config_file_type="yaml",
+        method_dataset_as_prepos=False
     ):
         """
 
@@ -407,10 +414,18 @@ class TensorboardLogger:
         self.watch_type = "None"
 
         self.freq = 10
+        
+        # add time and run_id
+        args.logger_config.name = (
+            time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+            + "_"
+            + args.logger_config.name
+        )
+        args.logger_config.name += "_" + args.run_id + f"_{args.comment}"
 
         if file_stream_log:
             self.file_logger, self.file_hdls, self.log_file_dir = get_logger(
-                **args.logger_config.to_dict()
+                **args.logger_config.to_dict(), args=args,method_dataset_as_prepos=method_dataset_as_prepos
             )
             config_cp_path = os.path.join(self.log_file_dir, "config.json")
             save2json_file(args.to_dict(), config_cp_path)

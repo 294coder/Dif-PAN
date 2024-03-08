@@ -1,5 +1,6 @@
 import argparse
 import os
+os.environ['CUDA_VISIBLE_DEVICES']='0,1'
 import os.path as osp
 
 import h5py
@@ -42,7 +43,7 @@ def get_args():
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
     parser.add_argument(
-        "--sub_arch", default='none', help="panformer sub-architecture name"
+        "--sub_arch", default="none", help="panformer sub-architecture name"
     )
 
     # train config
@@ -145,17 +146,15 @@ def main(local_rank, args):
     # load other configuration and merge args and configs together
     configs = config_load(args.arch, "./configs")
     args = merge_args_namespace(args, convert_config_dict(configs))
-    args.logger_config.name = (
-        time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
-        + "_"
-        + args.logger_config.name
-    )
     if is_main_process():
         print(args)
 
     # define network
     full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is None else args.arch
-    network_configs = getattr(args.network_configs, full_arch, args.network_configs).to_dict()
+    args.full_arch = full_arch
+    network_configs = getattr(
+        args.network_configs, full_arch, args.network_configs
+    ).to_dict()
     network = build_network(full_arch, **network_configs).cuda()
     # FIXME: may raise compile error
     # network = torch.compile(network)
@@ -243,8 +242,12 @@ def main(local_rank, args):
     if is_main_process() and args.logger_on:
         # logger = WandbLogger(args.proj_name, config=args, resume=args.resume,
         #                      id=args.run_id if not args.load else status_tracker.status['id'], run_name=args.run_name)
-        args.logger_config.name += "_" + args.run_id + f"_{args.comment}"
-        logger = TensorboardLogger(comment=args.run_id, args=args, file_stream_log=True)
+        logger = TensorboardLogger(
+            comment=args.run_id,
+            args=args,
+            file_stream_log=True,
+            method_dataset_as_prepos=True,
+        )
         logger.watch(
             network=network.module if args.ddp else network,
             watch_type=args.watch_type,
@@ -343,7 +346,10 @@ def main(local_rank, args):
                 # del h5_train, h5_val
         else:
             raise NotImplementedError(f"not support dataset {args.dataset}")
-
+        
+    # from torch.utils.data import Subset
+    # train_ds = Subset(train_ds, range(0, 20))
+        
     if args.ddp:
         train_sampler = torch.utils.data.DistributedSampler(
             train_ds, shuffle=args.shuffle
@@ -351,6 +357,7 @@ def main(local_rank, args):
         val_sampler = torch.utils.data.DistributedSampler(val_ds, shuffle=args.shuffle)
     else:
         train_sampler, val_sampler = None, None
+    
     train_dl = data.DataLoader(
         train_ds,
         args.batch_size,
@@ -419,7 +426,7 @@ if __name__ == "__main__":
     import torch.multiprocessing as mp
 
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "5696"
+    os.environ["MASTER_PORT"] = "5700"
     os.environ["TRANSFORMERS_CACHE"] = ".cache/transformers"
     os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 

@@ -65,7 +65,7 @@ class PatchMergeModule(nn.Module):
             self.split_func = lambda x, _, dim: [x]
         self.crop_batch_size = crop_batch_size
         self.patch_size_list = patch_size_list
-        print(f"patch_size: {patch_size_list}")
+        # print(f"patch_size: {patch_size_list}")
         self.scale = scale
 
         # decrepated attr

@@ -24,21 +24,21 @@
 #--comment '在新数据上训练dcfnet（wv3数据集）'
 #--pretrain --pretrain_id 2g9q0m22
 
-## mmnet arch
-#  python main.py --proj_name mmnet --arch mmnet \
-#  -b 40 --device 'cuda:12' --dataset 'wv3' \
-#  --warm_up_epochs 30 --num_worker 0 -e 500 --aug_probs 0. 0. \
-#  --loss l1 --val_n_epoch 10 --comment '训练wv3 mmnet' \
-#  --logger_on
+## lformer arch
+# python main.py --proj_name lformer_swin --arch lformer \
+# -b 38 --device 'cuda:1' --dataset 'wv3' \
+# --warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer swin arch on wv3 dataset' \
+# --logger_on --log_metrics \
 
 
 ## panMamba arch
-python main.py --proj_name PanMamba --arch panMamba \
--b 22 --device 'cuda:0' --dataset 'harvard_x8' \
---warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'mamba on harvard_x8 dataset (mamba with channel attn)' \
+python main.py --proj_name panMamba --arch panMamba \
+-b 46 --device 'cuda:0' --dataset 'wv3' \
+--warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
 --logger_on --log_metrics \
-#  --pretrain --pretrain_id '2m0bko53' #--non_load_strict
+#  --pretrain --pretrain_id 'immyzw0v' #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

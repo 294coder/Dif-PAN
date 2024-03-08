@@ -74,21 +74,20 @@ def val(
     val_loss_dict = ave_ep_loss(val_loss_dict, i)
     if args.ddp:
         if args.log_metrics:
-            _gathered_analysis: Union[List[AnalysisPanAcc], List[None]] = [
-                None for _ in range(args.world_size)
-            ]
+            _gathered_analysis = [None for _ in range(args.world_size)]
             dist.gather_object(analysis, _gathered_analysis if is_main_process() else None)
 
         gathered_val_dict = [None for _ in range(args.world_size)]
         dist.gather_object(val_loss_dict, gathered_val_dict if is_main_process() else None)
-        val_loss_dict = ave_multi_rank_dict(gathered_val_dict)
+        if is_main_process():
+            val_loss_dict = ave_multi_rank_dict(gathered_val_dict)
 
     acc_ave = analysis.acc_ave
     if is_main_process():
         # TODO: support different metrics
         if args.ddp and args.log_metrics:
             n = 0
-            acc = {}  # {"SAM": 0.0, "ERGAS": 0.0, "PSNR": 0.0, "CC": 0.0, "SSIM": 0.0}
+            acc = _gathered_analysis[0].empty_acc
             for analysis in _gathered_analysis:
                 for k, v in analysis.acc_ave.items():
                     acc[k] += v * analysis._call_n
@@ -116,6 +115,7 @@ def val(
                 ep_loss_dict2str(val_loss_dict),
                 f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
             )
+    dist.barrier()
     return acc_ave, val_loss / i  # only rank 0 is reduced and other ranks are original data
 
 
@@ -277,7 +277,8 @@ def train(
             dist.reduce(ep_loss, 0)
             ep_loss_ranks_dict = [None for _ in range(world_size)]
             dist.gather_object(ep_loss_dict, ep_loss_ranks_dict if is_main_process() else None, 0)
-            ep_loss_dict = ave_multi_rank_dict(ep_loss_ranks_dict)
+            if is_main_process():
+                ep_loss_dict = ave_multi_rank_dict(ep_loss_ranks_dict)
 
         if logger is not None and ddp:
             if is_main_process():

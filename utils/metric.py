@@ -3,6 +3,7 @@ import torch
 from skimage.metrics import structural_similarity, peak_signal_noise_ratio
 from functools import partial
 from warnings import warn
+from copy import deepcopy
 
 import sys
 sys.path.append('./')
@@ -75,6 +76,11 @@ class AnalysisPanAcc(object):
         self._call_n = 0
         self.acc_ave = {'SAM': 0., 'ERGAS': 0., 'PSNR': 0., 'CC': 0., 'SSIM': 0.} if ref else \
                        {'D_S': 1., 'D_lambda': 1., 'HQNR': 0.}
+
+    @property
+    def empty_acc(self):
+        return {'SAM': 0., 'ERGAS': 0., 'PSNR': 0., 'CC': 0., 'SSIM': 0.} if self.ref else \
+               {'D_S': 1., 'D_lambda': 1., 'HQNR': 0.}
 
     @staticmethod
     def permute_dim(*args, permute_dims=(1, 2, 0)):

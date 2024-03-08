@@ -14,18 +14,19 @@ lr_scheduler:
 
   name: "plateau"
   mode: "min"
-  threshold: !!float 5e-6 # l1
+  threshold: !!float 1e-5 # l1
   min_lr: !!float 1e-6
-  patience: 100
-  factor: !!float 0.2
-  cooldown: 40
+  patience: 40
+  factor: !!float 0.1
+  cooldown: 10
+  threshold_mode: "rel"
 
   # name: "multi_step"
   # milestones: [100] #[100, 800]
   # gamma: 0.1
 
 max_norm: 0.03
-ema_decay: 0.995
+ema_decay: 0.999
 
 path:
   wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
@@ -42,7 +43,7 @@ path:
   #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
   cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 
-  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb.h5"
+  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
   #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
   cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 
@@ -53,22 +54,39 @@ path:
   harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
 network_configs:
-  img_channel: 31
-  condition_channel: 3
-  out_channel: 31
-  width: 16
-  middle_blk_num: 1
-  enc_blk_nums: [1, 2, 2]
-  dec_blk_nums: [1, 2, 2]
-  ssm_convs: [11, 11, 11] #[11,11,11]
-  drop_path_rate: 0.2
+  img_channel: 8
+  condition_channel: 1
+  out_channel: 8
+  # nano config
+  # width: 8
+  # middle_blk_num: 1
+  # enc_blk_nums: [1, 1, 1]
+  # dec_blk_nums: [1, 1, 1]
+  # ssm_convs: [11, 9, 7]
+  # drop_path_rate: 0.0
+
+  ## small config
+  width: 32
+  middle_blk_num: 2
+  enc_blk_nums: [2,2,2]
+  dec_blk_nums: [2,2,2]
+  ssm_convs: [11, 11, 11]
+  drop_path_rate: 0.1
+
+  ## base config
+  # width: 32
+  # middle_blk_num: 3
+  # enc_blk_nums: [2,3,3]
+  # dec_blk_nums: [2,3,3]
+  # ssm_convs: [11, 11, 11]
+  # drop_path_rate: 0.3
+
   if_abs_pos: no # buggy: convergence is slow
   if_rope: no
-  stack: no
   patch_merge: yes
-  upscale: 8
+  upscale: 4
 
 logger_config:
   base_path: ./log_file/
-  name: panMamba_test
+  name: panMamba
   file_mode: w

@@ -11,6 +11,7 @@ from utils import get_local
 
 # get_local.activate()
 
+
 def exists(x):
     return x is not None
 
@@ -98,6 +99,39 @@ class ReflashAttn(nn.Module):
 
     def forward(self, attn):
         return self.body(attn).softmax(-1)
+    
+    
+def window_partition(x, window_size):
+    """
+    Args:
+        x: (B, C, H, W)
+        window_size (int): window size
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    # B, C, H, W = x.shape
+    # x = x.view(B, C, H // window_size, window_size, W // window_size, window_size)
+    # windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    windows = rearrange(x, "b c (h w1) (w w2) -> (b w1 w2) c h w", h=window_size, w=window_size)
+    return windows
+
+
+def window_reverse(windows, window_size, H, W):
+    """
+    Args:
+        windows: (num_windows*B, C, window_size, window_size)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
+    Returns:
+        x: (B, C, H, W)
+    """
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+    # x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
+    # x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    x = rearrange(windows, '(b w1 w2) c h w -> b c (h w1) (w w2)', 
+                  b=B, w1=H//window_size, w2=W//window_size)
+    return x
 
 
 # TODO:
@@ -105,21 +139,24 @@ class ReflashAttn(nn.Module):
 # 2. 加上resblok不换v
 
 
-class AttnFuse(nn.Module):
+class FirstAttn(nn.Module):
     def __init__(
-        self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False
+        self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False,
+        window_size = 8,
     ) -> None:
         super().__init__()
         self.nheads = nheads
         self.first_layer = first_layer
+        
+        self.ws = window_size
 
         self.rearrange = Rearrange("b (nhead c) h w -> b nhead c (h w)", nhead=nheads)
         self.q = nn.Sequential(
-            nn.Conv2d(lms_dim, inner_dim, 1, bias=True),
+            nn.Conv2d(pan_dim, inner_dim, 1, bias=True),
             nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, groups=inner_dim),
         )
         self.kv = nn.Sequential(
-            nn.Conv2d(pan_dim, inner_dim * 2, 1, bias=True),
+            nn.Conv2d(lms_dim, inner_dim * 2, 1, bias=True),
             nn.Conv2d(inner_dim * 2, inner_dim * 2, 3, 1, 1, groups=inner_dim * 2),
         )
         if first_layer:
@@ -145,35 +182,37 @@ class AttnFuse(nn.Module):
 
         self.attn_drop = nn.Dropout(attn_drop)
 
-    @get_local("attn", "out")
+    # @get_local("attn", "out")
     def forward(self, lms, pan):
         *_, h, w = lms.shape
 
         lms = self.ms_pre_norm(lms)
         pan = self.pan_pre_norm(pan)
+        
+        q = self.q(pan)  # q: pan
+        k, v = self.kv(lms).chunk(2, dim=1)  # kv: lms
 
-        q = self.q(lms)  # q: pan
-        k, v = self.kv(pan).chunk(2, dim=1)  # kv: lms
-
-        q, k, v = map(lambda x: self.rearrange(x), (q, k, v))
+        q, k, v = map(lambda x: self.rearrange(window_partition(x, self.ws)), (q, k, v))
         # q, k, v = map(lambda x: F.normalize(x, dim=-1), (q, k, v))
 
-        attn = torch.einsum("b h d n, b h e n -> b h d e", q, k)  # lms x pan
+        attn = torch.einsum("b h d m, b h d n -> b h m n", q, k)  # lms x pan
         attn = self.attn_drop(attn)
 
         attn = attn.softmax(-1)
 
-        out = torch.einsum("b h d e, b h e m -> b h d m", attn, v)
+        out = torch.einsum("b h m n, b h d n -> b h d m", attn, v)
         out = rearrange(
-            out, "b nhead c (h w) -> b (nhead c) h w", nhead=self.nheads, h=h, w=w
+            out, "b nhead d (h w) -> b (nhead d) h w", nhead=self.nheads, h=self.ws, w=self.ws
         )
-
+        out = window_reverse(out, self.ws, h, w)
+        
         return attn, out
 
 
 class MSReversibleRefine(nn.Module):
-    def __init__(self, dim, hp_dim, nhead=8, first_stage=False) -> None:
+    def __init__(self, dim, hp_dim, nhead=8, first_stage=False, window_size=8) -> None:
         super().__init__()
+        self.ws = window_size
         self.res_block = Residual(
             nn.Sequential(
                 nn.Conv2d(dim, dim, 3, 1, 1, groups=dim),
@@ -188,34 +227,34 @@ class MSReversibleRefine(nn.Module):
         self.nhead = nhead
         self.first_stage = first_stage
 
-    @get_local("reflashed_attn", "reflashed_out")
-    def forward(self, reuse_attn, lms, hp_in):
-        *_, h, w = lms.shape
+    # @get_local("reflashed_attn", "reflashed_out")
+    def forward(self, reuse_attn, refined_lms, hp_in):
+        *_, h, w = refined_lms.shape
 
         if not self.first_stage:
-            lms = rearrange(lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
             reuse_attn = self.reflash_attn(reuse_attn)
+            refined_lms = window_partition(refined_lms, self.ws)
+            refined_lms = rearrange(refined_lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
 
             refined_lms = torch.einsum(
-                "b h d e, b h e m -> b h d m", reuse_attn, lms
+                "b h m n, b h d m -> b h d n", reuse_attn, refined_lms
             )  # (lms x pan) x lms
             refined_lms = rearrange(
                 refined_lms,
                 "b nhead c (h w) -> b (nhead c) h w",
                 nhead=self.nhead,
-                h=h,
-                w=w,
+                h=self.ws,
+                w=self.ws,
             )
-        else:
-            refined_lms = lms
+            refined_lms = window_reverse(refined_lms, self.ws, h, w)
             
-        reflashed_attn = reuse_attn
+            
+        # reflashed_attn = reuse_attn
         reflashed_out = refined_lms
-        
         refined_lms = self.res_block(refined_lms)
-
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
         out = self.fuse_conv(reverse_out)
+        out = reflashed_out * out
 
         return reuse_attn, out
 
@@ -294,7 +333,7 @@ class AttnFuseMain(BaseModel):
         super().__init__()
         self.n_stage = n_stage
 
-        self.attn = AttnFuse(pan_dim, lms_dim, attn_dim, first_layer=False)
+        self.attn = FirstAttn(pan_dim, lms_dim, attn_dim, first_layer=False)
         self.pre_hp = PreHp(pan_dim, lms_dim, hp_dim)
 
         self.refined_blocks = nn.ModuleList([])
@@ -333,7 +372,9 @@ class AttnFuseMain(BaseModel):
         for i in range(self.n_stage):
             reversed_out = self.hp_branch[i](refined_lms, pre_hp)
             # TODO: update reused_attn or not
-            _reused_attn, refined_lms = self.refined_blocks[i](reused_attn, refined_lms, reversed_out)
+            _reused_attn, refined_lms = self.refined_blocks[i](
+                reused_attn, refined_lms, reversed_out
+            )
 
         out = self.hp_branch[-1](refined_lms, pre_hp)
         out = torch.cat([out, refined_lms], dim=1)
@@ -373,15 +414,15 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 31, 16, 16).cuda(1)
-    lms = torch.randn(1, 31, 64, 64).cuda(1)
-    pan = torch.randn(1, 3, 64, 64).cuda(1)
+    ms = torch.randn(1, 8, 16, 16).cuda(1)
+    lms = torch.randn(1, 8, 64, 64).cuda(1)
+    pan = torch.randn(1, 1, 64, 64).cuda(1)
 
     net = AttnFuseMain(
-        pan_dim=3,
-        lms_dim=31,
-        attn_dim=64,
-        hp_dim=64,
+        pan_dim=1,
+        lms_dim=8,
+        attn_dim=32,
+        hp_dim=32,
         n_stage=5,
         patch_merge=False,
         patch_size_list=[16, 64, 64],
@@ -391,11 +432,11 @@ if __name__ == "__main__":
     net.forward = partial(_only_for_flops_count_forward, net)
 
     # sr = net.val_step(ms, lms, pan)
-    sr = net._forward_implem(lms, pan)
+    # sr = net._forward_implem(lms, pan)
     # print(sr.shape)
 
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    # print(net(lms, pan).shape)
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
     # Pavia: 102/1
@@ -409,5 +450,5 @@ if __name__ == "__main__":
 
     # print(num_p/1e6)
 
-    cache = get_local.cache
-    print(cache)
+    # cache = get_local.cache
+    # print(cache)

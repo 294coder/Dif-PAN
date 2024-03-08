@@ -259,6 +259,8 @@ def ave_multi_rank_dict(rank_loss_dict: list[dict]):
         vs = 0
         for d in rank_loss_dict:
             v = d[k]
+            if isinstance(v, torch.Tensor):
+                v = v.item()
             vs = vs + v
         ave_dict[k] = vs / n
     return ave_dict
