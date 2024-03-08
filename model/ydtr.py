@@ -739,5 +739,5 @@ if __name__ == "__main__":
     print(net(ir, vis).shape)
 
     # print(
-    #     flop_count_table(FlopCountAnalysis(net, (ir, vis)))
+    #     flop_count_table(FlopCountAnalysis(net, (ir_RS, vis)))
     # )

@@ -6,7 +6,7 @@ import pickle
 import shutil
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Sequence, Iterable
 
 import beartype
 import matplotlib.pyplot as plt
@@ -20,6 +20,33 @@ from torchvision.utils import make_grid
 
 from utils.misc import _NameSpace, is_main_process
 from utils.visualize import get_spectral_image_ready
+
+import time
+from rich.console import Console
+from rich.logging import RichHandler
+from importlib import reload
+reload(logging)
+
+def get_time(sec):
+    h = int(sec//3600)
+    m = int((sec//60)%60)
+    s = int(sec%60)
+    return h,m,s
+
+class TimeFilter(logging.Filter):
+
+    def filter(self, record):
+        try:
+          start = self.start
+        except AttributeError:
+          start = self.start = time.time()
+
+        time_elapsed = get_time(time.time() - start)
+
+        record.relative = "{0}:{1:02d}:{2:02d}".format(*time_elapsed)
+
+        # self.last = record.relativeCreated/1000.0
+        return True
 
 
 def save2json_file(d: dict, path: str, mode: str = "w", indent: int = 4):
@@ -181,11 +208,13 @@ class TrainStatusLogger(object):
 def get_logger(
     base_path: str = None,
     name: str = None,
+    args=None,
     std_level=logging.INFO,
     file_level: Union[tuple, int] = (logging.DEBUG,),
     file_handler_names: Union[tuple, str] = ("debug",),
     file_mode: str = "w",
     show_pid: bool = False,
+    method_dataset_as_prepos=True,
 ):
     """
     get logger to log
@@ -201,13 +230,18 @@ def get_logger(
     assert name is not None, "@param name should not be None"
     assert base_path is not None, "@param base_path should not be None"
     if not show_pid:
-        format_str = "[%(asctime)s - %(funcName)s]-%(levelname)s: %(message)s"
+        # format_str = "[%(asctime)s - %(funcName)s]-%(levelname)s: %(message)s"
+        format_str = "(%(relative)s) %(message)s"
     else:
-        format_str = (
-            "[%(asctime)s - %(funcName)s - pid: %(thread)d]-%(levelname)s: %(message)s"
-        )
+        # format_str = (
+        #     "[%(asctime)s - %(funcName)s - pid: %(thread)d]-%(levelname)s: %(message)s"
+        # )
+        format_str = "(%(relative)s - pid: %(thread)d) %(message)s"
     logging.basicConfig(
-        level=std_level, format=format_str, datefmt="%a, %d %b %Y %H:%M:%S"
+        level=std_level, 
+        format=format_str, 
+        datefmt="[%X]",#"%a, %d %b %Y %H:%M:%S"
+        handlers=[RichHandler(show_path=False)]
     )
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
@@ -225,19 +259,27 @@ def get_logger(
         ), "@param file_handler_names and @param file_level \
             should be list and equal length"
         for n, level in zip(file_handler_names, file_level):
-            file_log_dir = os.path.join(base_path, name)
+            if method_dataset_as_prepos:
+                file_log_dir = os.path.join(base_path, args.full_arch, args.dataset, name)
+            else:
+                file_log_dir = os.path.join(base_path, name)
             if not os.path.exists(file_log_dir):
                 os.makedirs(file_log_dir)
                 print(f"logging: make log file [{os.path.abspath(file_log_dir)}]")
             file_log_path = os.path.join(file_log_dir, n + ".log")
-            file_handler = logging.FileHandler(file_log_path, mode=file_mode)
-            formatter = logging.Formatter(
-                "[%(asctime)s - %(name)s] - %(levelname)s: %(message)s"
-            )
-            file_handler.setFormatter(formatter)
+            # file_handler = logging.FileHandler(file_log_path, mode=file_mode)
+            file_console = Console(file=open(file_log_path, 'w'))
+            file_handler = RichHandler(console=file_console, show_path=False)
+            # formatter = logging.Formatter(
+            #     "[%(asctime)s - %(name)s] - %(levelname)s: %(message)s"
+            # )
+            # file_handler.setFormatter(formatter)
             file_handler.setLevel(level)
             hdls.append(file_handler)
             logger.addHandler(file_handler)
+            
+    for handler in logger.handlers:
+        handler.addFilter(TimeFilter())
 
     return logger, hdls, file_log_dir
 
@@ -349,9 +391,11 @@ class TensorboardLogger:
         args=None,
         tsb_logdir=None,
         comment=None,
-        file_stream_log=False,
+        file_stream_log=True,
+        # TODO: yaml file or json file for config
         config_file_mv="./configs",
         config_file_type="yaml",
+        method_dataset_as_prepos=False
     ):
         """
 
@@ -370,16 +414,24 @@ class TensorboardLogger:
         self.watch_type = "None"
 
         self.freq = 10
+        
+        # add time and run_id
+        args.logger_config.name = (
+            time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+            + "_"
+            + args.logger_config.name
+        )
+        args.logger_config.name += "_" + args.run_id + f"_{args.comment}"
 
         if file_stream_log:
             self.file_logger, self.file_hdls, self.log_file_dir = get_logger(
-                **args.logger_config.to_dict()
+                **args.logger_config.to_dict(), args=args,method_dataset_as_prepos=method_dataset_as_prepos
             )
             config_cp_path = os.path.join(self.log_file_dir, "config.json")
             save2json_file(args.to_dict(), config_cp_path)
             # shutil.copy2(os.path.join(config_file_mv, f'{args.arch}_config.{config_file_type}'), self.log_file_dir)
             self.print(
-                f"move config file to {os.path.abspath(self.log_file_dir)}", "INFO"
+                f"\nmove config file to {os.path.abspath(self.log_file_dir)}", "INFO"
             )
 
     def watch(self, network: nn.Module, watch_type: str, freq: int):
@@ -423,11 +475,12 @@ class TensorboardLogger:
             )
         self.writer.add_image(name, image, epoch, dataformats="CHW")
 
-    def log_images(self, batch_img, nrow, name, epoch, **kwargs):
-        # batch_image: shape [B, C, H, W]
-        batch_img = get_spectral_image_ready(batch_img, name)
-        grid_img = make_grid(batch_img, nrow=nrow, **kwargs)
-        self.log_image(grid_img, name, epoch)
+    def log_images(self, batch_imgs: Sequence, nrow: int, names: Sequence,
+                   epoch: int, ds_name: str, **grid_kwargs):
+        for batch_img, name in zip(batch_imgs, names):
+            batch_img = get_spectral_image_ready(batch_img, name, ds_name)
+            grid_img = make_grid(batch_img, nrow=nrow, **grid_kwargs)
+            self.log_image(grid_img, name, epoch)
 
     def log_network(self, network: nn.Module, ep: int):
         if self.watch_type != "None":

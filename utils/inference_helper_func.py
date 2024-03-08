@@ -8,7 +8,6 @@
 from typing import Tuple, Optional
 
 import einops
-from matplotlib import tight_layout
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,13 +15,10 @@ import math
 from torch.utils.data import DataLoader
 from torch import Tensor
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
-from .visualize import viz_batch, res_image, percent_norm
+from .visualize import viz_batch, res_image
 from .metric import AnalysisPanAcc
 from model.base_model import BaseModel, PatchMergeModule
-
-# from model.LFormer import _get_feat
 
 
 @torch.no_grad()
@@ -35,8 +31,12 @@ def unref_for_loop(model,
                    **patch_merge_module_kwargs):
     bs = dl.batch_size
     all_sr = []
-    # spa_size = tuple(dl.dataset.lms.shape[-2:])
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
+    try:
+        spa_size = tuple(dl.dataset.lms.shape[-2:])
+    except AttributeError:
+        spa_size = tuple(dl.dataset.rgb.shape[-2:])
+    
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
     if split_patch:
         # assert bs == 1, 'batch size should be 1'
         model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
@@ -46,7 +46,6 @@ def unref_for_loop(model,
         if split_patch:
             pan_nc = pan.size(1)
             ms_nc = ms.size(1)
-            spa_size = pan.shape[-2:]
             input = (
                 F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
                 lms,
@@ -75,12 +74,10 @@ def ref_for_loop(model,
                  split_patch=False,
                  ergas_ratio=4,
                  residual_exaggerate_ratio=100,
-                 prog=True,
                  **patch_merge_module_kwargs):
     analysis = AnalysisPanAcc(ergas_ratio)
     all_sr = []
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl)) if prog \
-                    else enumerate(dl, 1)
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
     if split_patch:
         # assert bs == 1, 'batch size should be 1'
@@ -102,40 +99,7 @@ def ref_for_loop(model,
             sr = model.forward_chop(*input)[0]
         # read images just once
         else:
-            sr = model.val_step(ms, lms, pan)
-        
-        ################################# FEATURES PLOT ######################################
-        # lformer_feats = _get_feat()  # lformer_feats[0][0].mean(1, keepdim=True)
-        # fig, axes = plt.subplots(2, 5, figsize=(15, 6))
-        # add_s = torch.linspace(1, 1.8, steps=5)
-        # for ii in range(len(lformer_feats)):
-        #     for jj in range(2):
-        #         f =  lformer_feats[ii][jj]
-        #         f = percent_norm(f, m=add_s[ii])
-        #         # print(f'{ii}, {jj} -> ', f.shape)  # lformer_feats[ii][jj].mean(1).keepdim(True)
-                
-        #         axes[jj, ii].imshow(f[0].mean(0).detach().cpu().numpy(), cmap='viridis')
-        #         axes[jj, ii].set_title(f'({ii}, {jj})')
-        #         axes[jj, ii].axis('off')
-                
-        # plt.tight_layout()
-        # fig.savefig(f'visualized_img/feature_show/cave/index_{i}.png', bbox_inches='tight', dpi=200)
-        #######################################################################################
-        
-        # lformer_attn = _get_feat()
-        # fig, axes = plt.subplots(len(lformer_attn), 8)
-        # for ii in range(len(lformer_attn)):
-        #     attn = lformer_attn[0][0]
-        #     print(f'stage {ii} ->', attn.shape)
-        #     for jj in range(8):
-        #         axes[ii][jj].imshow(attn[0, jj]+torch.eye(8)*attn[0,jj].max(), cmap='hot')
-        #         axes[ii][jj].axis('off')
-        
-        # fig.savefig(f'visualized_img/attn_show/index_{i}.png', bbox_inches='tight')
-            
-            
-            
-        
+            sr = model.val_step(ms, lms, pan, False)
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)

@@ -1,13 +1,15 @@
 import argparse
 import os
+os.environ['CUDA_VISIBLE_DEVICES']='0,1'
 import os.path as osp
 
 import h5py
-import time
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.utils.data as data
+import time
+import colored_traceback.always
 from wandb.util import generate_id
 
 from datasets.FLIR_2 import FLIRDataset
@@ -29,42 +31,19 @@ from utils import (
     merge_args_namespace,
     module_load,
     resume_load,
-    set_all_seed,
     BestMetricSaveChecker,
-    get_loss
+    set_all_seed,
+    get_loss,
 )
+
 
 def get_args():
     parser = argparse.ArgumentParser("PANFormer")
 
     # network
+    parser.add_argument("-a", "--arch", type=str, default="pannet")
     parser.add_argument(
-        "-a",
-        "--arch",
-        type=str,
-        default="pannet",
-        choices=[
-            "pannet",
-            "panformer",
-            "fusionnet",
-            "m3dnet",
-            "dcfnet",
-            "dcformer",
-            "hypertransformer",
-            "fuseformer",
-            "mmnet",
-            "ydtr",
-            "lformer",
-            "gppnn",
-            "pmacnet",
-            "gppnn_cvpr",
-            "hyper_transformer",
-            "hypertransformer_pre",
-            "lformer_cvpr_flatten_transformer"
-        ],
-    )
-    parser.add_argument(
-        "--sub_arch", default=None, help="panformer sub-architecture name"
+        "--sub_arch", default="none", help="panformer sub-architecture name"
     )
 
     # train config
@@ -90,9 +69,12 @@ def get_args():
             "ssimmci",
             "mcgmci",
             "ssimrmi_fuse",
-            "pia_fuse",
+            " pia_fuse",
             "u2fusion",
-            "cddfusion",
+            " swinfusion",
+            "hpm",
+            "none",
+            "None",
         ],
     )
     parser.add_argument("--grad_accum_ep", type=int, default=None)
@@ -121,9 +103,9 @@ def get_args():
     parser.add_argument("--hp", action="store_true", default=False)
     parser.add_argument("--shuffle", type=bool, default=True)
     parser.add_argument("--aug_probs", nargs="+", type=float, default=[0.0, 0.0])
-    parser.add_argument("-s", "--seed", type=int, default=2022)
+    parser.add_argument("-s", "--seed", type=int, default=3407)
     parser.add_argument("-n", "--num_worker", type=int, default=8)
-    parser.add_argument("--ergas_ratio", type=int, choices=[4, 8], default=4)
+    parser.add_argument("--ergas_ratio", type=int, choices=[2, 4, 8, 16, 20], default=4)
 
     # logger config
     parser.add_argument("--logger_on", action="store_true", default=False)
@@ -168,24 +150,19 @@ def main(local_rank, args):
         print(args)
 
     # define network
-    full_arch = (
-        args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
-    )
-    network_configs = (
-        eval(f"args.network_configs.{full_arch}").to_dict()
-        if args.sub_arch is not None
-        else args.network_configs.to_dict()
-    )
-    # import pdb
-    # pdb.set_trace()
-    network = build_network(full_arch, **network_configs)
+    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is None else args.arch
+    args.full_arch = full_arch
+    network_configs = getattr(
+        args.network_configs, full_arch, args.network_configs
+    ).to_dict()
+    network = build_network(full_arch, **network_configs).cuda()
+    # FIXME: may raise compile error
+    # network = torch.compile(network)
 
     # parallel or not
     assert not (args.dp and args.ddp), "dp and ddp can not be True at the same time"
     if args.dp:
-        network = nn.DataParallel(
-            network.cuda(), list(range(torch.cuda.device_count())), 0
-        )
+        network = nn.DataParallel(network, list(range(torch.cuda.device_count())), 0)
     elif args.ddp:
         dist.init_process_group(
             backend="nccl",
@@ -202,7 +179,7 @@ def main(local_rank, args):
             network,
             device_ids=[local_rank],
             output_device=local_rank,
-            find_unused_parameters=False,  # ensure that all parameters are optimized via DDP
+            # find_unused_parameters=True,
         )
     else:
         network = network.to(args.device)
@@ -215,7 +192,7 @@ def main(local_rank, args):
     args.optimizer.lr *= lr_adjust_ratio
     optim = get_optimizer(network.parameters(), **args.optimizer.to_dict())
     lr_scheduler = get_scheduler(optim, **args.lr_scheduler.to_dict())
-    criterion = get_loss(args.loss, network_configs.get('spectral_num', 4)).cuda()
+    criterion = get_loss(args.loss, network_configs.get("spectral_num", 4)).cuda()
 
     # load params
     # assert not (args.load and args.resume == 'allow'), 'resume the network and wandb logger'
@@ -265,20 +242,28 @@ def main(local_rank, args):
     if is_main_process() and args.logger_on:
         # logger = WandbLogger(args.proj_name, config=args, resume=args.resume,
         #                      id=args.run_id if not args.load else status_tracker.status['id'], run_name=args.run_name)
-        args.logger_config.name = time.strftime('%m-%d-%H:%M') + "_" + args.logger_config.name + "_" + args.run_id
-        logger = TensorboardLogger(comment=args.run_id, args=args, file_stream_log=True)
+        logger = TensorboardLogger(
+            comment=args.run_id,
+            args=args,
+            file_stream_log=True,
+            method_dataset_as_prepos=True,
+        )
         logger.watch(
             network=network.module if args.ddp else network,
             watch_type=args.watch_type,
             freq=args.watch_log_freq,
         )
     else:
-        logger = None
+        from utils import NoneLogger
+
+        logger = NoneLogger()
 
     # get datasets and dataloader
-    if args.split_ratio is not None and args.path is not None:
+    if (
+        args.split_ratio is not None and args.path is not None and False
+    ):  # never reach here
         # FIXME: only support splitting worldview3 datasets
-        # Warning: this code seg should not be reach
+        # Warn: will be decrepated in the next update
         train_ds, val_ds = make_datasets(
             args.path,
             hp=args.hp,
@@ -287,7 +272,7 @@ def main(local_rank, args):
             split_ratio=args.split_ratio,
         )
     else:
-        if args.dataset == "flir":  # RoadScene
+        if args.dataset == "flir":
             train_ds = FLIRDataset(args.path.base_dir, "train")
             val_ds = FLIRDataset(args.path.base_dir, "test")
         elif args.dataset == "tno":
@@ -296,11 +281,36 @@ def main(local_rank, args):
             )
             val_ds = TNODataset(args.path.base_dir, "test", aug_prob=args.aug_probs[1])
 
-        elif args.dataset in ["wv3", "qb", "gf", "hisi"]:
+        elif args.dataset in [
+            "wv3",
+            "qb",
+            "gf2",
+            "cave_x4",
+            "harvard_x4",
+            "cave_x8",
+            "harvard_x8",
+            "hisi-houston",
+        ]:
             # the dataset has already splitted
+
+            # FIXME: 需要兼顾老代码（只有trian_path和val_path）的情况
+            if hasattr(args.path, "train_path") and hasattr(args.path, "val_path"):
+                # 旧代码：手动切换数据集路径
+                train_path = args.path.train_path
+                val_path = args.path.val_path
+            else:
+                _args_path_keys = list(args.path.__dict__.keys())
+                for k in _args_path_keys:
+                    if args.dataset in k:
+                        train_path = getattr(args.path, f"{args.dataset}_train_path")
+                        val_path = getattr(args.path, f"{args.dataset}_val_path")
+            assert (
+                train_path is not None and val_path is not None
+            ), "train_path and val_path should not be None"
+
             h5_train, h5_val = (
-                h5py.File(args.path.train_path),
-                h5py.File(args.path.val_path),
+                h5py.File(train_path),
+                h5py.File(val_path),
             )
             if args.dataset in ["wv3", "qb"]:
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
@@ -308,25 +318,38 @@ def main(local_rank, args):
                     WV3Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
-            elif args.dataset == "hisi":
-                # keys = ["LRHSI", "HSI_up", "RGB", "GT"]
-                keys = None
-                d_train, d_val = (
-                    h5py_to_dict(h5_train, keys),
-                    h5py_to_dict(h5_val, keys),
-                )
-                train_ds = HISRDataSets(d_train, aug_prob=args.aug_probs[0])
-                val_ds = HISRDataSets(d_val, aug_prob=args.aug_probs[1])
-            elif args.dataset == "gf":
+            elif args.dataset == "gf2":
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (
                     GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
-                del h5_train, h5_val
+            elif args.dataset[:4] == "cave" or args.dataset[:7] == "harvard":
+                keys = ["LRHSI", "HSI_up", "RGB", "GT"]
+                if args.dataset.split("-")[-1] == "houston":
+                    from einops import rearrange
+
+                    dataset_fn = lambda x: rearrange(x, "b h w c -> b c h w")
+                else:
+                    dataset_fn = None
+
+                d_train, d_val = (
+                    h5py_to_dict(h5_train, keys),
+                    h5py_to_dict(h5_val, keys),
+                )
+                train_ds = HISRDataSets(
+                    d_train, aug_prob=args.aug_probs[0], dataset_fn=dataset_fn
+                )
+                val_ds = HISRDataSets(
+                    d_val, aug_prob=args.aug_probs[1], dataset_fn=dataset_fn
+                )
+                # del h5_train, h5_val
         else:
             raise NotImplementedError(f"not support dataset {args.dataset}")
-
+        
+    # from torch.utils.data import Subset
+    # train_ds = Subset(train_ds, range(0, 20))
+        
     if args.ddp:
         train_sampler = torch.utils.data.DistributedSampler(
             train_ds, shuffle=args.shuffle
@@ -334,6 +357,7 @@ def main(local_rank, args):
         val_sampler = torch.utils.data.DistributedSampler(val_ds, shuffle=args.shuffle)
     else:
         train_sampler, val_sampler = None, None
+    
     train_dl = data.DataLoader(
         train_ds,
         args.batch_size,
@@ -345,6 +369,7 @@ def main(local_rank, args):
     val_dl = data.DataLoader(
         val_ds,
         1,
+        # args.batch_size,
         num_workers=args.num_worker,
         sampler=val_sampler,
         pin_memory=True,
@@ -363,9 +388,9 @@ def main(local_rank, args):
         if not osp.exists(args.save_path):
             os.makedirs(args.save_path)
     print("network params are saved at {}".format(args.save_path))
-    
+
     # save checker
-    save_checker = BestMetricSaveChecker(metric_name='PSNR')
+    save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
 
     # start training
     with status_tracker:
@@ -401,12 +426,12 @@ if __name__ == "__main__":
     import torch.multiprocessing as mp
 
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "5678"
+    os.environ["MASTER_PORT"] = "5700"
+    os.environ["TRANSFORMERS_CACHE"] = ".cache/transformers"
+    os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
     args = get_args()
     # print(args)
+
     mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
-    
-    # for debug only
-    # spawn does not support pdb, also vscode do not support multiprocess
     # main(0, args)

@@ -354,14 +354,12 @@ if __name__ == "__main__":
     from fvcore.nn import FlopCountAnalysis, flop_count_table
     from functools import partial
 
-
     # w/o smrb ahead qkv
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
 
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
-
 
     lms = torch.randn(1, 8, 64, 64)  # .cuda(1)
     pan = torch.randn(1, 1, 64, 64)  # .cuda(1)

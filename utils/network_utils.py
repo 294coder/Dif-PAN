@@ -1,6 +1,7 @@
 import math
 from typing import Union
 from copy import deepcopy
+from bytecode import Bytecode, Instr
 
 import torch
 import torch.nn as nn
@@ -76,6 +77,20 @@ def variance_scaling_initializer(tensor):
             # To get stddev = math.sqrt(factor / n) need to adjust for truncated.
             trunc_stddev = math.sqrt(1.3 * factor / n)
         return fan_in, fan_out, trunc_stddev
+    
+def model_params(model):
+    if isinstance(model, (nn.DataParallel, nn.parallel.DistributedDataParallel)):
+        model = model.module
+    elif isinstance(model, torch._dynamo.eval_frame.OptimizedModule):  # torch.compile model
+        model = model._orig_mod
+    return model.state_dict()
+
+def model_device(model: Union[nn.Module, nn.DataParallel, 
+                              nn.parallel.DistributedDataParallel,
+                              torch._dynamo.eval_frame.OptimizedModule]):
+    params = model.parameters()
+    p0 = next(params)
+    return p0.device
 
 
 def clip_norm(max_norm, network, fp_scaler=None, optim=None):
@@ -139,7 +154,98 @@ class EMAModel(object):
             return self.ema_model.module.state_dict()
         except:
             return self.ema_model.state_dict()
+        
+        
+'''
+                         # Instr('STORE_FAST', '_res'),
+                         # Instr('LOAD_FAST', self.varname[0]),
+                         # Instr('STORE_FAST', '_value'),
+                         # Instr('LOAD_FAST', '_res'),
+                         # Instr('LOAD_FAST', '_value'),
 
+
+                        # Instr('STORE_FAST', '_res'),
+                        #  Instr('LOAD_FAST', '_res'),
+                        # Instr('STORE_FAST', '_res'),
+                        # Instr('LOAD_FAST', self.varname[0]),
+                        # Instr('LOAD_FAST', '_res'),
+'''
+class get_local(object):
+    cache = {}
+    is_activate = False
+
+    def __init__(self, *args):
+        self.varname = args
+
+    def __call__(self, func):
+        if not type(self).is_activate:
+            return func
+
+        type(self).cache[func.__qualname__] = []
+        c = Bytecode.from_code(func.__code__)
+        extra_code = []
+        # extra_code = [Instr('STORE_FAST', '_res'),
+        #               Instr('LOAD_FAST', '_res')]
+        # for var in self.varname:
+        #     extra_code.extend([
+        #         # Instr('STORE_FAST', '_res'),
+        #         Instr('LOAD_FAST', var),
+        #         Instr('LOAD_FAST', '_res')]
+        #     )
+        # extra_code.extend([
+        #                  Instr('BUILD_LIST', 1+len(self.varname)),
+        #                  Instr('STORE_FAST', '_result_list'),
+        #                  Instr('LOAD_FAST', '_result_list'),
+        #              ])
+        
+        extra_code.extend([
+            *[Instr('LOAD_FAST', varn) for varn in self.varname],
+            Instr('BUILD_LIST', 1+len(self.varname)),
+            Instr('STORE_FAST', '_result_list'),
+            Instr('LOAD_FAST', '_result_list'),
+        ])
+
+        c[-1:-1] = extra_code
+        func.__code__ = c.to_code()
+
+        def wrapper(*args, **kwargs):
+            res = func(*args, **kwargs)
+            saved_vs = res[-len(self.varname):]
+            output_vs = res[:-len(self.varname)]
+            for i, v in enumerate(saved_vs):
+                if hasattr(v, 'detach'):
+                    v = v.detach().cpu()  #.numpy()
+                    saved_vs[i] = v
+            
+            type(self).cache[func.__qualname__].append(saved_vs)
+            return output_vs if len(output_vs) > 1 else output_vs[0]
+        return wrapper
+
+    @classmethod
+    def clear(cls):
+        for key in cls.cache.keys():
+            cls.cache[key] = []
+
+    @classmethod
+    def activate(cls):
+        cls.is_activate = True
+        
+# get_local.activate()
+
+
+class Net():
+    def __init__(self) -> None:
+        pass
+    
+    @get_local("a", "b")
+    def myFuction(self, *args):
+        a=args[0]
+        # a=12234
+        b=args[1]
+        
+        c=2
+        return 1
+    
 # def ema_model(prev_model: Union[nn.Module, BaseModel], model: Union[nn.Module, BaseModel], ema_rate=0.999):
 #     prev_params = prev_model.state_dict()
 #     now_params = model.state_dict()

@@ -797,14 +797,14 @@ class LPNet(nn.Module):
 
      ############################################test###############################################################
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
     
-#     MS = torch.ones([16, 8, 4, 4])
-#     PAN = torch.ones([16, 1, 16, 16])
-#     lpnet = LPNet(12, 16, 24)
-#     y = lpnet(MS, PAN) #list
-#     print(type(y), len(y))
-#     print(y[2].shape)
+    MS = torch.ones([16, 8, 4, 4])
+    PAN = torch.ones([16, 1, 16, 16])
+    lpnet = LPNet(12, 16, 24)
+    y = lpnet(MS, PAN) #list
+    print(type(y), len(y))
+    print(y[2].shape)
 
 
 # #############################################################################
@@ -1130,31 +1130,20 @@ class GPPNN(BaseModel):
 if __name__ == '__main__':
     from functools import partial
     from fvcore.nn import FlopCountAnalysis, flop_count_table
-    import time
     
-    net = GPPNN(8, 1, 32, 8)#.cuda()
+    torch.cuda.set_device(2)
     
-    ms = torch.randn(1, 8, 16, 16)#.cuda()
-    pan = torch.randn(1, 1, 64, 64)#.cuda()
+    net = GPPNN(8, 1, 32, 8).cuda()
+    
+    ms = torch.randn(4, 8, 64, 64).cuda()
+    pan = torch.randn(4, 1, 256, 256).cuda()
     
     # print(net(ms, pan).shape)
     
     def forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
     
-    # net.forward = partial(forward, net)
-    # avg = 0.
-    # for n in range(20):
-    #     s = time.time()
-    #     net(ms, pan)
-    #     e = time.time()
-    #     avg += e - s
-        
-    # print(avg/20)
-    
-    
-    
-    net.forward = net._forward_implem
+    net.forward = partial(forward, net)
     
     print(
         flop_count_table(FlopCountAnalysis(net, (ms, pan)))
@@ -1162,6 +1151,6 @@ if __name__ == '__main__':
     
     
     
-    # 2xaxu8k3
+
     
 

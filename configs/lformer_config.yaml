@@ -1,32 +1,31 @@
 optimizer:
-  name: 'adamw'
+  name: "adamw"
   lr: !!float 1e-3
   weight_decay: !!float 1e-6
 
 lr_scheduler:
-  name: 'multi_step'
-  milestones: [100, 1000]
-  gamma: 0.1
-#  name: 'identity'
+  # name: "multi_step"
+  # milestones: [100, 1000]
+  # gamma: 0.1
+  #  name: 'identity'
 
-max_norm: 1e-4
+  name: "plateau"
+  mode: "min"
+  threshold: !!float 5e-6 # l1
+  min_lr: !!float 1e-6
+  patience: 30
+  factor: !!float 0.2
+  cooldown: 10
+
+max_norm: 0.03
+ema_decay: 0.999
 
 path:
-  train_path: '/Data3/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
-  val_path: '/Data3/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
-  # train_path: "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  # val_path: "/media/office-401-remote/Elements SE/cao/cavex4/test_cavepatches64-2.h5"
-  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/train_Chikusei.h5"
-  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/Chikusei_x4/test_Chikusei.h5"
-  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
-  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
-  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Train_Botswana.h5"
-  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
+  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
 
-#   train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
-#   val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
-#  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-#  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
 network_configs:
   # lformer_ablation:
@@ -35,18 +34,29 @@ network_configs:
   #   attn_dim: 64
   #   hp_dim: 64
   #   n_stage: 5
-  pan_dim: 1
-  lms_dim: 8 #145 #102 #128
-  attn_dim: 64
-  hp_dim: 64
-  n_stage: 5
-  patch_merge: no
-  crop_batch_size: 32
-  patch_size_list: [16,64,64]
-  scale: 4
+  lformer:
+    pan_dim: 1
+    lms_dim: 8 #102 #128
+    attn_dim: 32
+    hp_dim: 32
+    n_stage: 5
+    patch_merge: yes
+    crop_batch_size: 32
+    patch_size_list: [16, 64, 64]
+    scale: 4
 
+  lformer_ablation_skip:
+    pan_dim: 1
+    lms_dim: 8 #102 #128
+    attn_dim: 64
+    hp_dim: 64
+    n_stage: 5
+    patch_merge: yes
+    crop_batch_size: 32
+    patch_size_list: [16, 64, 64]
+    scale: 4
 
 logger_config:
   base_path: ./log_file/
-  name: lformer_2d_reflash_attn
+  name: lformer
   file_mode: w

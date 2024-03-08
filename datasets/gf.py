@@ -6,11 +6,20 @@ import numpy as np
 import h5py
 from typing import List, Tuple, Optional
 
-from utils import Indentity
+from utils import Identity
 
 
 class GF2Datasets(data.Dataset):
-    def __init__(self, d, aug_prob=0., hp=False, hp_ksize=(5, 5), norm_range=True, full_res=False, const=1023.):
+    def __init__(
+        self,
+        d,
+        aug_prob=0.0,
+        hp=False,
+        hp_ksize=(5, 5),
+        norm_range=True,
+        full_res=False,
+        const=1023.0,
+    ):
         """
 
         :param d: h5py.File or dict or path
@@ -30,16 +39,25 @@ class GF2Datasets(data.Dataset):
             )
         if not full_res:
             self.gt, self.ms, self.lms, self.pan = self.get_divided(d)
-            print('datasets shape:')
-            print('{:^20}{:^20}{:^20}{:^20}'.format('pan', 'ms', 'lms', 'gt'))
-            print('{:^20}{:^20}{:^20}{:^20}'.format(str(self.pan.shape), str(self.ms.shape),
-                                                    str(self.lms.shape), str(self.gt.shape)))
+            print("datasets shape:")
+            print("{:^20}{:^20}{:^20}{:^20}".format("pan", "ms", "lms", "gt"))
+            print(
+                "{:^20}{:^20}{:^20}{:^20}".format(
+                    str(self.pan.shape),
+                    str(self.ms.shape),
+                    str(self.lms.shape),
+                    str(self.gt.shape),
+                )
+            )
         else:
             self.ms, self.lms, self.pan = self.get_divided(d, True)
-            print('datasets shape:')
-            print('{:^20}{:^20}{:^20}'.format('pan', 'ms', 'lms'))
-            print('{:^20}{:^20}{:^20}'.format(str(self.pan.shape), str(self.ms.shape),
-                                              str(self.lms.shape)))
+            print("datasets shape:")
+            print("{:^20}{:^20}{:^20}".format("pan", "ms", "lms"))
+            print(
+                "{:^20}{:^20}{:^20}".format(
+                    str(self.pan.shape), str(self.ms.shape), str(self.lms.shape)
+                )
+            )
 
         self.size = self.ms.shape[0]
 
@@ -51,12 +69,16 @@ class GF2Datasets(data.Dataset):
 
         # to tensor
         if norm_range:
+
             def norm_func(x):
                 # return torch.tensor(x) / 2047.
                 return torch.tensor(x) / const
+
         else:
+
             def norm_func(x):
                 return torch.tensor(x)
+
         self.pan = norm_func(self.pan)
         self.ms = norm_func(self.ms)
         self.lms = norm_func(self.lms)
@@ -65,26 +87,25 @@ class GF2Datasets(data.Dataset):
 
         # geometrical transformation
         self.aug_prob = aug_prob
-        self.geo_trans = T.Compose([
-            T.RandomVerticalFlip(p=aug_prob),
-            T.RandomHorizontalFlip(p=aug_prob)
-        ]) if aug_prob != 0. else Indentity()
+        self.geo_trans = (
+            T.Compose(
+                [T.RandomVerticalFlip(p=aug_prob), T.RandomHorizontalFlip(p=aug_prob)]
+            )
+            if aug_prob != 0.0
+            else Identity()
+        )
 
     @staticmethod
     def get_divided(d, full_resolution=False):
         if not full_resolution:
             return (
-                np.asarray(d['gt']),
-                np.asarray(d['ms']),
-                np.asarray(d['lms']),
-                np.asarray(d['pan'])
+                np.asarray(d["gt"]),
+                np.asarray(d["ms"]),
+                np.asarray(d["lms"]),
+                np.asarray(d["pan"]),
             )
         else:
-            return (
-                np.asarray(d['ms']),
-                np.asarray(d['lms']),
-                np.asarray(d['pan'])
-            )
+            return (np.asarray(d["ms"]), np.asarray(d["lms"]), np.asarray(d["pan"]))
 
     @staticmethod
     def _get_high_pass(data, k_size):
@@ -109,34 +130,31 @@ class GF2Datasets(data.Dataset):
         return data_list
 
     def __getitem__(self, item):
-        if hasattr(self, 'gt'):
-            tuple_data = (self.pan[item],
-                          self.ms[item],
-                          self.lms[item],
-                          self.gt[item])
+        if hasattr(self, "gt"):
+            tuple_data = (self.pan[item], self.ms[item], self.lms[item], self.gt[item])
         else:
-            tuple_data = (self.pan[item],
-                          self.ms[item],
-                          self.lms[item])
-        return self.aug_trans(*tuple_data) if self.aug_prob != 0. else tuple_data
+            tuple_data = (self.pan[item], self.ms[item], self.lms[item])
+        return self.aug_trans(*tuple_data) if self.aug_prob != 0.0 else tuple_data
 
     def __len__(self):
         return self.size
 
     def __repr__(self):
-        return f'num: {self.size} \n ' \
-               f'augmentation: {self.geo_trans} \n' \
-               f'get high pass ms and pan: {self.hp} \n ' \
-               f'filter kernel size: {self.hp_ksize}'
+        return (
+            f"num: {self.size} \n "
+            f"augmentation: {self.geo_trans} \n"
+            f"get high pass ms and pan: {self.hp} \n "
+            f"filter kernel size: {self.hp_ksize}"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import torch.utils.data as D
 
-    path = '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+    path = "/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
     d = h5py.File(path)
     ds = GF2Datasets(d, norm_range=True, hp=False)
     dl = D.DataLoader(ds, batch_size=16, num_workers=6)
     for gt, ms, lms, pan in dl:
-        print(gt.shape, ms.shape, lms.shape, pan.shape, sep='\n')
+        print(gt.shape, ms.shape, lms.shape, pan.shape, sep="\n")
         break

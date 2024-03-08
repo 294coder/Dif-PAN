@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../datasets"
+		},
+		{
+			"path": "../efficient-RWKV-Vmamba"
+		}
+	],
+	"settings": {
+		"files.autoSave": "afterDelay",
+		"editor.cursorSmoothCaretAnimation": "on"
+	}
+}

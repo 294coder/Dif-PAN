@@ -3,7 +3,7 @@
 # All Rights Reserved
 #
 # @Time    : 2023/6/21 1:38
-# @Author  : Zihan Cao, Xiao Wu
+# @Author  : Xiao Wu
 # @reference:
 #
 from functools import partial, wraps
@@ -65,7 +65,7 @@ class PatchMergeModule(nn.Module):
             self.split_func = lambda x, _, dim: [x]
         self.crop_batch_size = crop_batch_size
         self.patch_size_list = patch_size_list
-        print(f"patch_size: {patch_size_list}")
+        # print(f"patch_size: {patch_size_list}")
         self.scale = scale
 
         # decrepated attr
@@ -119,8 +119,6 @@ class PatchMergeModule(nn.Module):
             patch_size_list
         ), "input @x_list should have the same length as @patch_size_list"
         for x, patch_size in zip(x_list, patch_size_list):
-            # torch.cuda.empty_cache()
-            
             b, c, h, w = x.size()
             x_size_list.append(x.size())
             # assert b == 3, 'batch size should be 1 when doing inference'
@@ -166,7 +164,7 @@ class PatchMergeModule(nn.Module):
         ).cpu()  # y_hw_cut[:, [29, 19, 9]]
 
         x_hw_cut_list.clear()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         # for x, h_padsize, w_padsize, h_cut, w_cut, hshave, wshave in zip(x_list, h_padsize_list, w_padsize_list, h_cut_list, w_cut_list, hshave_list, wshave_list):
         #     b, c, h, w = x.size()
@@ -195,7 +193,7 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_h_cut_list.clear()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         y_w_cut = self.cut_w(
             x_w_cut_list,
@@ -209,7 +207,7 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_w_cut_list.clear()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         # self.axes[0][0].imshow(y_h_cut[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
         ################################################
@@ -239,7 +237,7 @@ class PatchMergeModule(nn.Module):
             **kwargs,
         )
         x_h_top_list.clear(), x_w_top_list.clear()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         # self.axes[0][1].imshow(y_h_top[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
         ################################################
@@ -273,7 +271,7 @@ class PatchMergeModule(nn.Module):
                 ],
                 **kwargs,
             )
-            # torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
             y_unfold.append(res)
 
         if isinstance(y_unfold[0], tuple):
@@ -571,7 +569,7 @@ class PatchMergeModule(nn.Module):
                 ],
                 **kwargs,
             )
-            # torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
             y_w_cut_unfold.append(res)
 
         if isinstance(y_w_cut_unfold[0], tuple):
@@ -644,16 +642,19 @@ class PatchMergeModule(nn.Module):
 
 # base model class
 # all model defination should inherit this class
-class BaseModel(nn.Module):
+from abc import ABC, abstractmethod
+class BaseModel(ABC, nn.Module):
     def __init__(self, **kwargs):
         super(BaseModel, self).__init__(**kwargs)
         pass
-
+    
+    @abstractmethod
     def train_step(
         self, ms, lms, pan, gt, criterion
     ) -> Union[Tuple[torch.Tensor], Tuple[Tensor, dict]]:
         raise NotImplementedError
 
+    @abstractmethod
     def val_step(self, ms, lms, pan) -> torch.Tensor:
         raise NotImplementedError
 
@@ -671,6 +672,7 @@ class BaseModel(nn.Module):
         else:
             raise NotImplementedError
 
+    @abstractmethod
     def _forward_implem(self, *args, **kwargs):
         raise NotImplementedError
 

@@ -6,7 +6,7 @@ import numpy as np
 import h5py
 from typing import List, Tuple, Optional, Union
 
-from utils import Indentity
+from utils import Identity
 
 # WV3_GT_MEAN = [0.13435693, 0.15736127, 0.19913845, 0.17137502, 0.13985378,
 #                0.16384054, 0.21204206, 0.1553395]
@@ -105,7 +105,7 @@ class WV3Datasets(data.Dataset):
                 [T.RandomVerticalFlip(p=aug_prob), T.RandomHorizontalFlip(p=aug_prob)]
             )
             if aug_prob != 0.0
-            else Indentity()
+            else Identity()
         )
 
     @staticmethod
@@ -118,9 +118,11 @@ class WV3Datasets(data.Dataset):
                 torch.tensor(d["pan"][:], dtype=torch.float32),
             )
         else:
-            return (torch.tensor(d["ms"][:], dtype=torch.float32), 
-                    torch.tensor(d["lms"][:], dtype=torch.float32), 
-                    torch.tensor(d["pan"][:], dtype=torch.float32))
+            return (
+                torch.tensor(d["ms"][:], dtype=torch.float32),
+                torch.tensor(d["lms"][:], dtype=torch.float32),
+                torch.tensor(d["pan"][:], dtype=torch.float32),
+            )
 
     @staticmethod
     def _get_high_pass(data, k_size):
@@ -202,10 +204,10 @@ def make_datasets(
 
 
 if __name__ == "__main__":
-    path = '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
+    path = "/Data2/DataSet/pansharpening/training_data/train_wv3.h5"
     # train_ds, val_ds = make_datasets(path, aug_probs=(0., 0.))
-    # file = h5py.File("/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5")
-    train_ds = WV3Datasets(path, full_res=False)
+    file = h5py.File("/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5")
+    train_ds = WV3Datasets(file, full_res=False)
     train_dl = data.DataLoader(train_ds, 128, shuffle=True)
     for pan, ms, lms, gt in train_dl:
         import matplotlib.pyplot as plt

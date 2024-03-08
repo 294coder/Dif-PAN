@@ -63,7 +63,7 @@ class FusionNet(BaseModel):
         init_weights(self.backbone, self.conv1, self.conv3)  # state initialization, important!
         self.apply(init_weights)
 
-    def forward(self, x, y):  # x= lms; y = pan
+    def _forward_implem(self, x, y):  # x= lms; y = pan
 
         pan_concat = y.repeat(1, self.spectral_num, 1, 1)  # Bsx8x64x64
         input = torch.sub(pan_concat, x)  # Bsx8x64x64
@@ -75,7 +75,7 @@ class FusionNet(BaseModel):
         return output  # lms + outs
 
     def train_step(self, ms, lms, pan, gt, criterion):
-        res = self(lms, pan)
+        res = self._forward_implem(lms, pan)
         sr = lms + res  # output:= lms + hp_sr
         # reg = loss_with_l2_regularization()
         loss = criterion(sr, gt)
@@ -83,7 +83,7 @@ class FusionNet(BaseModel):
         return sr, loss
 
     def val_step(self, ms, lms, pan):
-        res = self(lms, pan)
+        res = self._forward_implem(lms, pan)
         sr = lms + res  # output:= lms + hp_sr
 
         return sr
@@ -91,21 +91,6 @@ class FusionNet(BaseModel):
 
 if __name__ == '__main__':
     fusionnet = FusionNet(8, 32)
-    x = torch.randn(1, 8, 256, 256)
-    y = torch.randn(1, 1, 256, 256)
-    print(fusionnet(x, y).shape)
-    
-    import contextlib
-    import time
-    
-    @contextlib.contextmanager
-    def time_it(t=10):
-        t1 = time.time()
-        yield
-        t2 = time.time()
-        print('time: {:.3f}s'.format((t2 - t1)/t))
-    
-    tt = 10
-    with time_it(tt):
-        for _ in range(tt):
-            fusionnet(x, y)
+    x = torch.randn(1, 8, 64, 64)
+    y = torch.randn(1, 1, 64, 64)
+    print(fusionnet._forward_implem(x, y).shape)

@@ -1,17 +1,12 @@
 import time
 from typing import Union
-import PIL.Image
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data as data
 import torchvision.transforms as T
-import cv2
-import numpy as np
 import h5py
 import random
-from typing import List, Tuple, Optional
-
-from utils import Indentity
+from typing import List, Tuple, Optional, Callable
 
 
 class HISRDataSets(data.Dataset):
@@ -19,9 +14,11 @@ class HISRDataSets(data.Dataset):
     def __init__(
         self,
         file: Union[h5py.File, str, dict],
-        normalize=False,
         aug_prob=0.0,
         rgb_to_bgr=False,
+        full_res=False,
+        *,
+        dataset_fn=None
     ):
         super(HISRDataSets, self).__init__()
         # warning: you should not save file (h5py.File) in this class,
@@ -34,20 +31,57 @@ class HISRDataSets(data.Dataset):
                 "warning: when @file is a h5py.File object, it can not be pickled.",
                 "try to set DataLoader number_worker to 0",
             )
-        self.gt, self.lr_hsi, self.rgb, self.hsi_up = self._split_parts(
-            file, normalize, rgb_to_bgr=rgb_to_bgr
+            
+        # checking dataset_fn type
+        if dataset_fn is not None:
+            if isinstance(dataset_fn, (list, tuple)):
+                def _apply_fn(tensor):
+                    for fn in dataset_fn:
+                        tensor = fn(tensor)
+                    return tensor
+                self.dataset_fn = _apply_fn 
+            elif isinstance(dataset_fn, Callable):
+                self.dataset_fn = dataset_fn
+            else: raise TypeError("dataset_fn should be a list of callable or a callable object")
+        else:
+            self.dataset_fn = lambda *x: x[0]
+        
+        self.full_res = full_res
+        data_s= self._split_parts(
+            file, rgb_to_bgr=rgb_to_bgr, full=full_res
         )
-        self.size = self.gt.shape[-2:]
+        
+        if len(data_s) == 4:
+            self.gt, self.lr_hsi, self.rgb, self.hsi_up = data_s
+
+        else:
+            self.lr_hsi, self.rgb, self.hsi_up = data_s           
+        
+        self.size = self.rgb.shape[-2:]
         print("dataset shape:")
-        print("{:^20}{:^20}{:^20}{:^20}".format("lr_hsi", "hsi_up", "rgb", "gt"))
-        print(
-            "{:^20}{:^20}{:^20}{:^20}".format(
-                str(tuple(self.lr_hsi.shape)),
-                str(tuple(self.hsi_up.shape)),
-                str(tuple(self.rgb.shape)),
-                str(tuple(self.gt.shape)),
+
+        # print dataset info
+        if not full_res:
+            print("{:^20}{:^20}{:^20}{:^20}".format("lr_hsi", "hsi_up", "rgb", "gt"))
+            print(
+                "{:^20}{:^20}{:^20}{:^20}".format(
+                    str(tuple(self.lr_hsi.shape)),
+                    str(tuple(self.hsi_up.shape)),
+                    str(tuple(self.rgb.shape)),
+                    str(tuple(self.gt.shape)),
+                )
             )
-        )
+            
+        else:
+            print("{:^20}{:^20}{:^20}".format("lr_hsi", "hsi_up", "rgb"))
+            print(
+                "{:^20}{:^20}{:^20}".format(
+                    str(tuple(self.lr_hsi.shape)),
+                    str(tuple(self.hsi_up.shape)),
+                    str(tuple(self.rgb.shape)),
+                )
+            )
+            
         # geometrical transformation
         self.aug_prob = aug_prob
         self.geo_trans = (
@@ -75,38 +109,37 @@ class HISRDataSets(data.Dataset):
                 ]
             )
             if aug_prob != 0.0
-            else Indentity()
+            else lambda *x: x
         )
 
-    def _split_parts(self, file, normalize=False, load_all=True, rgb_to_bgr=False, keys=None):
+    def _split_parts(self, file, load_all=True, rgb_to_bgr=False, keys=None, full=False):
         # has already been normalized
         
-        keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
-        # keys = ['GT', 'MS', 'PAN', 'LMS']
+        
+        # warning: key RGB is HRMSI when the dataset is GF5-GF1
+        if not full:
+            keys = ['GT', 'LRHSI', 'RGB', 'HSI_up']
+        else:
+            keys = ['LRHSI', 'RGB', 'HSI_up']
         
         if load_all:
             # load all data in memory
-            if normalize:
-                return (
-                    torch.tensor(file[keys[0]][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file[keys[1]][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file[keys[2]][:], dtype=torch.float32) / 2047.0,
-                    torch.tensor(file[keys[3]][:], dtype=torch.float32) / 2047.0,
+            data = []
+            for k in keys:
+                data.append(
+                    self.dataset_fn(torch.tensor(file[k][:], dtype=torch.float32)),
                 )
-            else:
-                data = [
-                    torch.tensor(file[keys[0]][:], dtype=torch.float32),
-                    torch.tensor(file[keys[1]][:], dtype=torch.float32),
-                    torch.tensor(file[keys[2]][:], dtype=torch.float32),
-                    torch.tensor(file[keys[3]][:], dtype=torch.float32),
-                ]
-                if rgb_to_bgr:
-                    print("warning: rgb to bgr, for testing generalization only.")
-                    # rgb -> bgr
+            if rgb_to_bgr:
+                print("warning: rgb to bgr, for testing generalization only.")
+                # rgb -> bgr
+                if not full:
                     data[2] = data[2][:, [-1, 1, 0]]
-                return data
+                else:
+                    data[1] = data[1][:, [-1, 1, 0]]
+            return data
         else:
             # warning: it will ignore @normalize
+            # warning: "GT" can not be access in FULL mode
             return (
                 file.get("GT"),
                 file.get("LRHSI"),
@@ -132,19 +165,26 @@ class HISRDataSets(data.Dataset):
 
         # harvard [rgb]
         # cave [bgr]
-        tuple_data = (
-            self.rgb[index],
-            self.lr_hsi[index],
-            self.hsi_up[index],
-            self.gt[index],
-        )
+        if not self.full_res:
+            tuple_data = (
+                self.rgb[index],
+                self.lr_hsi[index],
+                self.hsi_up[index],
+                self.gt[index],
+            )
+        else:
+            tuple_data = (
+                self.rgb[index],
+                self.lr_hsi[index],
+                self.hsi_up[index],
+            )
         if self.aug_prob != 0.0:
             return self.aug_trans(*tuple_data)
         else:
             return tuple_data
 
     def __len__(self):
-        return len(self.gt)
+        return len(self.rgb)
 
 
 if __name__ == "__main__":

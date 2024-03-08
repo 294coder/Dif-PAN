@@ -26,7 +26,7 @@ def default(val, d):
     return val if exists(val) else d
 
 
-def set_all_seed(seed=2023):
+def set_all_seed(seed=2022):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -36,7 +36,7 @@ def set_all_seed(seed=2023):
     cudnn.benchmark = False
 
 
-class Indentity:
+class Identity:
     def __call__(self, *args):
         # args is a tuple
         # return is also a tuple
@@ -46,7 +46,8 @@ class Indentity:
 def to_numpy(*args):
     l = []
     for i in args:
-        l.append(i.detach().cpu().numpy())
+        if isinstance(i, torch.Tensor):
+            l.append(i.detach().cpu().numpy())
     return l
 
 
@@ -73,7 +74,7 @@ def h5py_to_dict(file: h5py.File, keys=None) -> dict[str, np.ndarray]:
         Defaults to ["ms", "lms", "pan", "gt"].
 
     Returns:
-        dict[str, np.ndarray]: 
+        dict[str, np.ndarray]:
     """
     d = {}
     if keys is None:
@@ -84,9 +85,9 @@ def h5py_to_dict(file: h5py.File, keys=None) -> dict[str, np.ndarray]:
     return d
 
 
-def dict_to_str(d):
+def dict_to_str(d, decimals=4):
     n = len(d)
-    func = lambda k, v: f"{k}: {v.item() if isinstance(v, torch.Tensor) else v}"
+    func = lambda k, v: f"{k}: {torch.round(v, decimals=decimals).item() if isinstance(v, torch.Tensor) else np.round(v, decimals=decimals)}"
     s = ""
     for i, (k, v) in enumerate(d.items()):
         s += func(k, v) + (", " if i < n - 1 else "")
@@ -242,7 +243,8 @@ def yaml_load(name, base_path="./configs"):
         cont = f.read()
         return yaml.load(cont, Loader=yaml.FullLoader)
     else:
-        raise FileNotFoundError("configuration file not exists with path {}".format(path))
+        print("configuration file not exists")
+        raise FileNotFoundError
 
 
 def json_load(name, base_path="./configs"):
@@ -461,4 +463,3 @@ if __name__ == "__main__":
         dataset_keys=["GT", "LRHSI", "HSI_up", "RGB"],
         save_path="/home/ZiHanCao/datasets/HISI/new_harvard/x8/test_clip_128.h5",
     )
-

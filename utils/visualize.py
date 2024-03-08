@@ -3,18 +3,26 @@ import os.path as osp
 from typing import Tuple, Union
 
 import cv2
-from einops import rearrange
 import numpy as np
 import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
 from utils.misc import to_numpy
 
-def right_pad_dims_to(x, t):
-    padding_dims = x.ndim - t.ndim
-    if padding_dims <= 0:
-        return t
-    return t.view(*t.shape, *((1,) * padding_dims))
+def get_rgb_channel_by_dataset_name(tensor, dataset_name: str):
+    if dataset_name in ('wv3', 'wv2'):
+        return tensor[:, [4,2,0], ...]
+    elif dataset_name in ('gf2', 'qb'):
+        return tensor[:, :3, ...]
+    elif dataset_name in ('gf5', 'gf5-gf1'):
+        return tensor[:, [40, 30, 20], ...]
+    elif dataset_name == 'houston':
+        return tensor[:, [39, 29, 19], ...]
+    elif 'cave' in dataset_name or 'harvard' in dataset_name:
+        return tensor[:, [29, 19, 9], ...]
+    else:
+        return tensor[:, :3, ...]
+
 
 def permute_dim(*args):
     d = [
@@ -22,27 +30,8 @@ def permute_dim(*args):
     ]
     return d
 
-def percent_norm(img, p=0.9, m=0):
-    """
-    normalize image by percent
-    :param img: numpy array, shape [B, C, H, W]
-    :param p: float, range (0, 1), default 0.9
-    :return:
-    """
-    s = torch.quantile(rearrange(img, 'b ... -> b (...)').abs(), 
-                           p, dim=-1, keepdim=True)
-    # s.clamp(0, 1)
-    
-    s = right_pad_dims_to(img, s)
-    
-    img = img.clamp(-s, s) / s
-    img = ((img + 1) / 2) * m  # [0, m]
-    img = img.clamp(0, 1)
-    
-    return img
 
-
-def normalize(img):
+def normalize(img, to_uint8=True):
     """
     centering image to show
     :param img: numpy array, shape [H, W, C]
@@ -50,8 +39,9 @@ def normalize(img):
     """
     img = img - img.min((0, 1))
     img = img / img.max((0, 1))
-    img *= 255
-    img = img.astype('uint8')
+    if to_uint8:
+        img *= 255
+        img = img.astype('uint8')
     return img
 
 
@@ -113,19 +103,27 @@ def res_image(gt: Tensor, sr: Tensor, *, exaggerate_ratio: int = None) -> torch.
     return res
 
 
-def get_spectral_image_ready(batch_image, name: str) -> torch.Tensor:
-    img_arrs = batch_image.permute(0, 2, 3, 1).cpu().numpy()
-    # FIXME: when residual image passed, there is no need hist equalization
-    equalized_img = [torch.tensor(hist_equal(normalize(i))).permute(-1, 0, 1)[None, ...] for i in
-                     img_arrs]  # [1, C, H, W]
-    grid = torch.cat(equalized_img, dim=0)
-    if name in ('residual', 'pan'):
-        return grid
+def get_spectral_image_ready(batch_image, name: str, ds_name: str=None) -> torch.Tensor:
+    # batch_image: [B, C, H, W]
+    if name in ('lms', 'sr'): 
+        batch_image = get_rgb_channel_by_dataset_name(batch_image, ds_name)
+    elif name == 'pan' and batch_image.shape[1] > 3:
+        batch_image = batch_image[:, :3]
+    
+    img_arrs = batch_image.permute(0, 2, 3, 1).cpu().numpy()  # [B, H, W, C]
+    if 'res' not in name:
+        equalized_img = [torch.tensor(hist_equal(normalize(i))).permute(-1, 0, 1)[None, ...] 
+                        for i in img_arrs]  # [1, C, H, W]
     else:
-        if grid.shape[1] > 4:  # wv3, wv2
-            return grid[:, [0, 2, 4], ...]  # select 3 channels to show
-        else:  # gf, qb
-            return grid[:, :3, ...]
+        equalized_img = [torch.tensor(normalize(i, to_uint8=False)).permute(-1, 0, 1)[None, ...] for i in img_arrs]
+    grid = torch.cat(equalized_img, dim=0)
+    # if name in ('residual', 'pan', 'res'):
+    return grid
+    # else:
+    #     if grid.shape[1] > 4:  # wv3, wv2
+    #         return grid[:, [0, 2, 4], ...]  # select 3 channels to show
+    #     else:  # gf, qb
+    #         return grid[:, :3, ...]
 
 
 def viz_batch(img: Tensor, base_path='./visualized_img', suffix=None, start_index=1, format='jpg'):
@@ -280,82 +278,6 @@ def plt_plot_img_without_white_margin(img, *args, **kwargs):
     plt.gca().set_axis_off()
 
     return fig, ax
-
-############################ GETLOCAL FUNCTION: bytecode to get a local varible #######################
-from bytecode import Bytecode, Instr
-'''
-                         # Instr('STORE_FAST', '_res'),
-                         # Instr('LOAD_FAST', self.varname[0]),
-                         # Instr('STORE_FAST', '_value'),
-                         # Instr('LOAD_FAST', '_res'),
-                         # Instr('LOAD_FAST', '_value'),
-
-
-                        # Instr('STORE_FAST', '_res'),
-                        #  Instr('LOAD_FAST', '_res'),
-                        # Instr('STORE_FAST', '_res'),
-                        # Instr('LOAD_FAST', self.varname[0]),
-                        # Instr('LOAD_FAST', '_res'),
-'''
-class get_local(object):
-    cache = {}
-    is_activate = False
-
-    def __init__(self, *args):
-        self.varname = args
-
-    def __call__(self, func):
-        if not type(self).is_activate:
-            return func
-
-        type(self).cache[func.__qualname__] = []
-        c = Bytecode.from_code(func.__code__)
-        extra_code = []
-        # extra_code = [Instr('STORE_FAST', '_res'),
-        #               Instr('LOAD_FAST', '_res')]
-        # for var in self.varname:
-        #     extra_code.extend([
-        #         # Instr('STORE_FAST', '_res'),
-        #         Instr('LOAD_FAST', var),
-        #         Instr('LOAD_FAST', '_res')]
-        #     )
-        # extra_code.extend([
-        #                  Instr('BUILD_LIST', 1+len(self.varname)),
-        #                  Instr('STORE_FAST', '_result_list'),
-        #                  Instr('LOAD_FAST', '_result_list'),
-        #              ])
-        
-        extra_code.extend([
-            *[Instr('LOAD_FAST', varn) for varn in self.varname],
-            Instr('BUILD_LIST', 1+len(self.varname)),
-            Instr('STORE_FAST', '_result_list'),
-            Instr('LOAD_FAST', '_result_list'),
-        ])
-
-        c[-1:-1] = extra_code
-        func.__code__ = c.to_code()
-
-        def wrapper(*args, **kwargs):
-            res = func(*args, **kwargs)
-            saved_vs = res[-len(self.varname):]
-            output_vs = res[:-len(self.varname)]
-            for i, v in enumerate(saved_vs):
-                if hasattr(v, 'detach'):
-                    v = v.detach().cpu()  #.numpy()
-                    saved_vs[i] = v
-            
-            type(self).cache[func.__qualname__].append(saved_vs)
-            return output_vs if len(output_vs) > 1 else output_vs[0]
-        return wrapper
-
-    @classmethod
-    def clear(cls):
-        for key in cls.cache.keys():
-            cls.cache[key] = []
-
-    @classmethod
-    def activate(cls):
-        cls.is_activate = True
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt

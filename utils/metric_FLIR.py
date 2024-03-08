@@ -3,7 +3,7 @@
 # All Rights Reserved
 #
 # @Time    : 2023/4/10 12:37
-# @Author  : Xiao Wu, ZiHan Cao
+# @Author  : Xiao Wu
 # @reference:
 #
 import itertools
@@ -248,9 +248,9 @@ if __name__ == '__main__':
 
     # f = torch.randint(0, 255, (256, 256), dtype=torch.float)
     # vi = torch.randint(0, 255, (256, 256), dtype=torch.float)
-    # ir = torch.randint(0, 255, (256, 256), dtype=torch.float)
+    # ir_RS = torch.randint(0, 255, (256, 256), dtype=torch.float)
 
-    # analysis_Reference_fast(f, vi, ir)
+    # analysis_Reference_fast(f, vi, ir_RS)
 
     gt = (torch.randn(2, 2, 256, 256) + 1) / 2
     sr = (torch.randn(2, 1, 256, 256) + 1) / 2

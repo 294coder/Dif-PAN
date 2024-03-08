@@ -460,6 +460,18 @@ def compare_index(A):
     return C_best, best_ind
 
 
+########################################
+# Non-reference quality assessment
+# D_\lambda, D_s, HQNR implementaion
+# Author: Xiao Wu, Zihan Cao
+# Date: 2024/02/04
+########################################
+
+from .FS_index.hqnr2 import indexes_evaluation_FS
+
+
+
+
 if __name__ == "__main__":
     a = torch.randn(256, 256, 3)
     b = torch.randn(256, 256, 3)
