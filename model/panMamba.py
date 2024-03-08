@@ -619,6 +619,7 @@ class MambaInjectionBlock(nn.Module):
             **mamba_kwargs,
         )
         # self.norm = norm_layer(inner_chan)
+        self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
 
         # v1: add attn
         # self.adaptive_pool_size = (3, 3)
@@ -655,7 +656,10 @@ class MambaInjectionBlock(nn.Module):
         x_local = window_reverse(xs_local, self.window_size, h, w)
         # x_local = self.inner_norm(x_local)
 
-        x = self.mamba(self.inner_to_outter_conv(torch.cat([x_local, x], dim=-1)))
+        # enhance v1
+        # x = self.mamba(self.inner_to_outter_conv(torch.cat([x_local, x], dim=-1)))
+        # enhance v2
+        x = self.mamba(x_local * self.enhanced_factor + x)
 
         # x_spe = F.adaptive_avg_pool2d(
         #     x_in.permute(0, 3, 1, 2), self.adaptive_pool_size
@@ -1142,11 +1146,11 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=32,
+        width=16,
         middle_blk_num=2,
         enc_blk_nums=[2, 2, 2],
         dec_blk_nums=[2, 2, 2],
-        ssm_convs=[11, 11, 11] * 3,
+        ssm_convs=[9, 7, 5],
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
@@ -1155,7 +1159,7 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    img_size = 16
+    img_size = 32
     scale = 8
     chan = 8
     pan_chan = 1
@@ -1168,7 +1172,7 @@ if __name__ == "__main__":
 
     out = net._forward_implem(img, cond)
     loss = F.mse_loss(out, gt)
-    loss.backward()
+    # loss.backward()
     print(loss)
     # find unused params
     # for n, p in net.named_parameters():

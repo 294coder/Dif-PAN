@@ -1,24 +1,17 @@
-from sympy import false
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange, reduce
-
-# from .module_util import SinusoidalPosEmb, LayerNorm, exists
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import math
-from torch import einsum
-
+import torch.utils.checkpoint as cp
+from timm.layers import DropPath, trunc_normal_
 from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 
-from model.module.rwkv_module import RWKV_ChannelMix_x051a as CMixBlock
-from model.module.rwkv_module import RWKV_TimeMix_x051a as TMixBlock
-from model.module.rwkv_module import Block as RKWVBlockCFirst
-
+from model.module.vrwkv import VRWKV_SpatialMix, VRWKV_ChannelMix
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 
@@ -166,15 +159,15 @@ class VisionRotaryEmbeddingFast(nn.Module):
             freqs = torch.ones(num_freqs).float()
         else:
             raise ValueError(f"unknown modality {freqs_for}")
-        
+
         self.freqs = freqs
 
         if ft_seq_len is None:
             ft_seq_len = pt_seq_len
         self.seq_len = ft_seq_len
-            
+
         self.alter_seq_len(ft_seq_len, pt_seq_len)
-        
+
     def alter_seq_len(self, ft_seq_len, pt_seq_len):
         t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len
 
@@ -182,8 +175,8 @@ class VisionRotaryEmbeddingFast(nn.Module):
         # freqs = repeat(freqs, "... n -> ... (n r)", r=2)
         freqs = broadcat((freqs[:, None, :], freqs[None, :, :]), dim=-1)
 
-        freqs_cos = freqs.cos().view(-1, freqs.shape[-1])
-        freqs_sin = freqs.sin().view(-1, freqs.shape[-1])
+        freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).cuda()
+        freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).cuda()
 
         self.register_buffer("freqs_cos", freqs_cos)
         self.register_buffer("freqs_sin", freqs_sin)
@@ -199,10 +192,12 @@ class VisionRotaryEmbeddingFast(nn.Module):
             return torch.cat((t[:, :1, :], t_spatial), dim=1)
         else:
             return t * self.freqs_cos + rotate_half(t) * self.freqs_sin
-        
+
     def __repr__(self):
-        return f"VisionRotaryEmbeddingFast(seq_len={self.seq_len}, freqs_cos={tuple(self.freqs_cos.shape)}, "+\
-               f"freqs_sin={tuple(self.freqs_sin.shape)})"
+        return (
+            f"VisionRotaryEmbeddingFast(seq_len={self.seq_len}, freqs_cos={tuple(self.freqs_cos.shape)}, "
+            + f"freqs_sin={tuple(self.freqs_sin.shape)})"
+        )
 
 
 class RandomOrLearnedSinusoidalPosEmb(nn.Module):
@@ -354,24 +349,48 @@ class Attention(nn.Module):
         self.heads = heads
         hidden_dim = dim_head * heads
 
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+        self.to_qkv = nn.Linear(
+            dim, hidden_dim * 3, bias=False
+        )  # nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+        self.to_out = nn.Linear(hidden_dim, dim)
+        self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
-        b, c, h, w = x.shape
-        qkv = self.to_qkv(x).chunk(3, dim=1)
+        # b, c, h, w = x.shape
+        # b, c, n = x.shape
+        x = rearrange(x, "b d n -> b n d")
+        x = self.norm(x)
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
         q, k, v = map(
-            lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), [q, k, v]
         )
 
+        # For 2D image
+        # q, k, v = map(
+        #     lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+        # )
+
+        # q = q * self.scale
+
+        # sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
+        # attn = sim.softmax(dim=-1)
+        # out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
+
+        # out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
+
+        # For 1D sequence
         q = q * self.scale
 
-        sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
-        attn = sim.softmax(dim=-1)
-        out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
+        q = q.softmax(dim=-2)
+        k = k.softmax(dim=-1)
+        # v = v / n
 
-        out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
-        return self.to_out(out)
+        context = torch.einsum("b h n d, b h n e -> b h d e", k, v)
+        out = torch.einsum("b h d e, b h n d -> b h e n", context, q)
+        out = rearrange(out, "b h e n -> b n (h e)")
+        out = self.to_out(out)
+
+        return out.transpose(1, 2)
 
 
 class Upsampler(nn.Sequential):
@@ -414,7 +433,7 @@ def initialize_weights(net_l, scale=1.0):
                 if m.bias is not None:
                     m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
-                init.kaiming_normal_(m.weight, a=0, mode="fan_in")
+                init.kaiming_normal_(m.weight, a=0, mode="fan_in", nonlinearity='relu')
                 m.weight.data *= scale
                 if m.bias is not None:
                     m.bias.data.zero_()
@@ -423,29 +442,142 @@ def initialize_weights(net_l, scale=1.0):
                 init.constant_(m.bias.data, 0.0)
 
 
-class RWKVBlock(nn.Module):
-    def __init__(self, n_embd, n_head, bias, tmix_drop, cmix_drop, n_layer, layer_id):
+def window_partition(x, window_size):
+    """
+    Args:
+        x: (B, H, W, C)
+        window_size (int): window size
+    Returns:
+        windows: (num_windows*B, window_size, window_size, C)
+    """
+    B, H, W, C = x.shape
+    x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+    windows = (
+        x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+    )
+    return windows
+
+
+def window_reverse(windows, window_size, H, W):
+    """
+    Args:
+        windows: (num_windows*B, window_size, window_size, C)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
+    Returns:
+        x: (B, H, W, C)
+    """
+    B = int(windows.shape[0] / (H * W / window_size / window_size))
+    x = windows.view(
+        B, H // window_size, W // window_size, window_size, window_size, -1
+    )
+    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    return x
+
+
+class Block(nn.Module):
+    def __init__(self, cond_chan, n_embd, n_layer, layer_id, shift_mode='q_shift',
+                 channel_gamma=1/4, shift_pixel=1, drop_path=0., hidden_rate=4,
+                 init_mode='fancy', init_values=None, post_norm=False, key_norm=False,
+                 with_cp=False):
         super().__init__()
-        self.c_fisrt_body = RKWVBlockCFirst(
-            n_embd, n_head, bias, tmix_drop, cmix_drop, n_layer, layer_id
-        )
+        self.layer_id = layer_id
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        if self.layer_id == 0:
+            self.ln0 = nn.LayerNorm(n_embd)
+
+        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd),
+                                         nn.Linear(n_embd+cond_chan, n_embd, bias=False),
+                                         nn.Linear(cond_chan, n_embd*2),])
+        self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, shift_mode,
+                                   channel_gamma, shift_pixel, init_mode,
+                                   key_norm=key_norm)
+
+        self.ffn = VRWKV_ChannelMix(n_embd, n_layer, layer_id, shift_mode,
+                                   channel_gamma, shift_pixel, hidden_rate,
+                                   init_mode, key_norm=key_norm)
+        self.layer_scale = (init_values is not None)
+        self.post_norm = post_norm
+        if self.layer_scale:
+            self.gamma1 = nn.Parameter(init_values * torch.ones((n_embd)), requires_grad=True)
+            self.gamma2 = nn.Parameter(init_values * torch.ones((n_embd)), requires_grad=True)
+        self.with_cp = with_cp
+
+    def forward(self, x, cond, patch_resolution=None):
+        cond = self.fuse_convs[0](cond)
+        x = torch.cat([x, cond], dim=-1)
+        x = self.fuse_convs[1](x)
+        scale, shift = self.fuse_convs[2](cond).chunk(2, dim=-1)
+        
+        def _inner_forward(x):
+            if self.layer_id == 0:
+                x = self.ln0(x)
+            if self.post_norm:
+                if self.layer_scale:
+                    x = x + self.drop_path(self.gamma1 * self.ln1(self.att(x, patch_resolution)))
+                    x = x * scale + self.drop_path(self.gamma2 * self.ln2(self.ffn(x, patch_resolution))) + shift
+                else:
+                    x = x + self.drop_path(self.ln1(self.att(x, patch_resolution)))
+                    x = x * scale + self.drop_path(self.ln2(self.ffn(x, patch_resolution))) + shift
+            else:
+                if self.layer_scale:
+                    x = x + self.drop_path(self.gamma1 * self.att(self.ln1(x), patch_resolution))
+                    x = x * scale + self.drop_path(self.gamma2 * self.ffn(self.ln2(x), patch_resolution)) + shift
+                else:
+                    x = x + self.drop_path(self.att(self.ln1(x), patch_resolution))
+                    x = x * scale + self.drop_path(self.ffn(self.ln2(x), patch_resolution)) + shift
+            return x
+        if self.with_cp and x.requires_grad:
+            x = cp.checkpoint(_inner_forward, x)
+        else:
+            x = _inner_forward(x)
+        return x
+        
+
+
+class Sequential(nn.Module):
+    def __init__(self, *args):
+        super().__init__()
+        self.mods = nn.ModuleList(args)
+
+    def __getitem__(self, idx):
+        return self.mods[idx]
+    
+    def enc_forward(self, feat, cond, patch_resolution):
+        outp = feat
+        for mod in self.mods:
+            outp = mod(outp, cond, patch_resolution)
+        return outp
+
+    def dec_forward(self, feat, cond, patch_resolution):
+        outp = feat
+        outp = self.mods[0](outp)
+        for mod in self.mods[1:]:
+            outp = mod(outp, cond, patch_resolution)
+        return outp
+
+
+class SquareReLU(nn.Module):
+    def __init__(self):
+        super().__init__()
 
     def forward(self, x):
-        # if to_1d:
-        # *_, h, w = x.shape
-        # x = rearrange(x, "b c h w -> b (h w) c")
-        x = self.c_fisrt_body(x)
-        # if back_to_2d:
-        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        return x
+        return F.relu(x) ** 2
 
 
 ############# PanRWKV Model ################
 
 
 class SimpleGate(nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
     def forward(self, x):
-        x1, x2 = x.chunk(2, dim=1)
+        x1, x2 = x.chunk(2, dim=self.dim)
         return x1 * x2
 
 
@@ -575,22 +707,47 @@ class NAFBlock(nn.Module):
         return x, time
 
 
-def down(chan, h, w):
+class Permute(nn.Module):
+    def __init__(self, mode="c_first"):
+        super().__init__()
+        self.mode = mode
+
+    def forward(self, x):
+        if self.mode == "c_first":
+            # b h w c -> b c h w
+            return x.permute(0, 3, 1, 2)
+        elif self.mode == "c_last":
+            # b c h w -> b h w c
+            return x.permute(0, 2, 3, 1)
+        else:
+            raise NotImplementedError
+
+
+def down(chan):
     return nn.Sequential(
-        Rearrange('b (h w) c -> b c h w', h=h, w=w),
+        # Rearrange('b h w c -> b c h w', h=h, w=w),
+        Permute("c_first"),
         nn.Conv2d(chan, 2 * chan, 2, 2),
-        Rearrange('b c h w -> b (h w) c'),
+        # Rearrange('b c h w -> b h w c'),
+        Permute("c_last"),
     )
 
-def up(chan, h, w):
+
+def up(chan):
     return nn.Sequential(
-        Rearrange('b (h w) c -> b c h w', h=h, w=w),
-        nn.Conv2d(chan, chan * 2, 1, bias=False), 
-        nn.PixelShuffle(2),
-        Rearrange('b c h w -> b (h w) c'),
+        # Rearrange('b h w c -> b c h w', h=h, w=w),
+        Permute("c_first"),
+        # ver 1: use pixelshuffle
+        # ver 2: directly upsample and half the channels
+        nn.Conv2d(chan, chan // 2, 1, bias=False),
+        # nn.PixelShuffle(2),
+        nn.Upsample(scale_factor=2, mode="bilinear"),
+        # Rearrange('b c h w -> b h w c'),
+        Permute("c_last"),
     )
 
-@register_model("panRWKV")
+
+@register_model("panMamba")
 class ConditionalNAFNet(BaseModel):
     def __init__(
         self,
@@ -601,56 +758,42 @@ class ConditionalNAFNet(BaseModel):
         middle_blk_num=1,
         enc_blk_nums=[],
         dec_blk_nums=[],
+        ssm_convs=[],
         upscale=1,
-        if_abs_pos=False,
+        if_abs_pos=True,
         if_rope=False,
         pt_img_size=64,
         drop_path_rate=0.1,
-        stack=False,
         patch_merge=True,
     ):
         super().__init__()
         self.upscale = upscale
-        # fourier_dim = width
-        # sinu_pos_emb = SinusoidalPosEmb(fourier_dim)
-        # time_dim = width * 4
+        self.if_abs_pos = if_abs_pos
         self.rope = if_rope
         self.pt_img_size = pt_img_size
+        self.patch_merge = patch_merge
 
-        self.stack = stack
+        if if_abs_pos:
+            self.abs_pos = nn.Parameter(
+                torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True
+            )
 
-        # self.time_mlp = nn.Sequential(
-        #     sinu_pos_emb,
-        #     nn.Linear(fourier_dim, time_dim * 2),
-        #     SimpleGate(),
-        #     nn.Linear(time_dim, time_dim),
-        # )
+        if if_rope:
+            self.rope = VisionRotaryEmbeddingFast(
+                chan, pt_seq_len=pt_img_size, ft_seq_len=None
+            )
 
         self.intro = nn.Sequential(
             nn.Conv2d(
-                in_channels=img_channel + condition_channel,
+                in_channels=img_channel,
                 out_channels=width,
-                kernel_size=3,
-                padding=1,
+                kernel_size=1,
                 stride=1,
                 groups=1,
-                bias=True,
+                bias=False,
             ),
-            Rearrange('b c h w -> b (h w) c')
+            Rearrange("b c h w -> b h w c"),
         )
-
-        # stacking
-        if stack:
-            self.ending2 = nn.Conv2d(
-                in_channels=width,
-                out_channels=img_channel,
-                kernel_size=3,
-                padding=1,
-                stride=1,
-                groups=1,
-                bias=True,
-            )
-            self._stack_forward_flag = True
 
         self.ending = nn.Conv2d(
             in_channels=width,
@@ -659,166 +802,167 @@ class ConditionalNAFNet(BaseModel):
             padding=1,
             stride=1,
             groups=1,
-            bias=True,
+            bias=False,
         )
-        
+
         ## main body
         self.encoders = nn.ModuleList()
-        self.enc_ropes = nn.ModuleList()
         self.decoders = nn.ModuleList()
-        self.dec_ropes = nn.ModuleList()
         self.middle_blks = nn.ModuleList()
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
 
         depth = sum(enc_blk_nums) + middle_blk_num + sum(dec_blk_nums)
-        dpr = [
-            x.item() for x in torch.linspace(0, drop_path_rate, depth)
-        ]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         inter_dpr = dpr
 
         chan = width
         n_prev_blks = 0
         # encoder
-        for enc_i, num in enumerate(enc_blk_nums):
+        for layer_id, num in enumerate(enc_blk_nums):
             self.encoders.append(
-                # nn.Sequential(*[NAFBlock(chan, time_dim) for _ in range(num)])
-                nn.Sequential(
-                    *[RWKVBlock(chan,8,True,inter_dpr[enc_i],inter_dpr[enc_i],
-                                n_layer=depth,layer_id=n_prev_blks + i,) for i in range(num)]
+                Sequential(
+                    *[
+                        Block(
+                            condition_channel, chan, depth, layer_id, 
+                            drop_path=inter_dpr[n_prev_blks + i],
+                        )
+                        for i in range(num)
+                    ]
                 )
             )
-            if if_rope: self.enc_ropes.append(VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None))
-            else: self.enc_ropes.append(nn.Identity())
-            
-            self.downs.append(down(chan, pt_img_size, pt_img_size))
+            self.downs.append(down(chan))
             chan = chan * 2
             n_prev_blks += num
             pt_img_size //= 2
 
         # middle layer
-        self.middle_blks = nn.Sequential(
-            # *[NAFBlock(chan, time_dim) for _ in range(middle_blk_num)]
-            *[RWKVBlock(chan, 8, True, inter_dpr[enc_i], inter_dpr[enc_i],
-                        n_layer=depth, layer_id=n_prev_blks + i,) for i in range(middle_blk_num)]
+        self.middle_blks = Sequential(
+            *[
+                Block(
+                    condition_channel, chan, depth, layer_id, 
+                    drop_path=inter_dpr[n_prev_blks + i],
+                )
+                for i in range(num)
+            ]
         )
-        if if_rope: self.middle_rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
-        else: self.middle_rope = nn.Identity()
-        
         n_prev_blks += middle_blk_num
 
         # decoder
-        for dec_i, num in enumerate(dec_blk_nums, enc_i):
-            if if_rope: self.dec_ropes.append(VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None))
-            else: self.dec_ropes.append(nn.Identity())
-            
-            self.ups.append(
-                up(chan, pt_img_size, pt_img_size)
-                # Upsample(chan, chan//2)
-            )
+        ssm_convs = list(reversed(ssm_convs))
+        for layer_id, num in enumerate(reversed(dec_blk_nums), layer_id):
+            self.ups.append(up(chan))
             chan = chan // 2
             pt_img_size *= 2
-            
+
             self.decoders.append(
-                # nn.Sequential(*[NAFBlock(chan, time_dim) for _ in range(num)])
-                nn.Sequential(
-                    *[RWKVBlock(chan,8,True,inter_dpr[dec_i],inter_dpr[dec_i],
-                                n_layer=depth,layer_id=n_prev_blks + i,) for i in range(num)]
+                Sequential(
+                    nn.Linear(chan * 2, chan),
+                    *[
+                        Block(
+                            condition_channel, chan, depth, layer_id, 
+                            drop_path=inter_dpr[n_prev_blks + i],
+                        )
+                        for i in range(num)
+                    ],
                 )
             )
             n_prev_blks += num
 
         self.padder_size = 2 ** len(self.encoders)
-        
-        # for patch merging if the image is too large       
-        self.patch_merge = patch_merge 
-        if patch_merge:
-            self._patch_merge_model = PatchMergeModule(self, crop_batch_size=32, patch_size_list=[16, 64, 64], scale=4,
-                                                       patch_merge_step=self.patch_merge_step)
-            
+
+        # init
+        print("============= init network =================")
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m: nn.Module):
+        # print(type(m))
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=0.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+        elif isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="leaky_relu")
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
     def alter_ropes(self, ft_img_size):
         if ft_img_size != self.pt_img_size and self.rope:
             for rope in self.enc_ropes:
                 rope.alter_seq_len(ft_img_size, rope.seq_len)
                 ft_img_size //= 2
-                
+
             self.middle_rope.alter_seq_len(ft_img_size, rope.seq_len)
-                
-            for rope in self.middle_ropes:
-                ft_img_size *= 2
-                rope.alter_seq_len(ft_img_size, rope.seq_len)
+
+            # for rope in self.middle_ropes:
+            ft_img_size *= 2
+            self.middle_rope.alter_seq_len(ft_img_size, rope.seq_len)
 
     def _forward_once(self, inp, cond):
-        # inp_res = inp.clone()
-
-        # if isinstance(time, int) or isinstance(time, float):
-        #     time = torch.tensor([time]).to(inp.device)
-
-        # x = inp - cond[:, :inp.shape[1]]
-        # x = torch.cat([x, cond], dim=1)
-        x = torch.cat([inp, cond], dim=1)
-
-        # t = self.time_mlp(time)
-
-        B, C, H, W = x.shape
-        x = self.check_image_size(x)
+        x = inp
+        *_, H, W = x.shape
 
         x = self.intro(x)
+        if self.if_abs_pos:
+            x = x + self.abs_pos
 
         encs = []
 
-        for encoder, down, rope in zip(self.encoders, self.downs, self.enc_ropes):
-            x = rope(x)
-            x = encoder(x)
+        for encoder, down in zip(self.encoders, self.downs):
+            cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
+            x = encoder.enc_forward(x, cond, (H, W))
             encs.append(x)
             x = down(x)
+            H = H // 2
+            W = W // 2
 
-        x = self.middle_rope(x)
-        x = self.middle_blks(x)
+        cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
+        x = self.middle_blks.enc_forward(x, cond, (H, W))
 
-        for decoder, up, rope, enc_skip in zip(self.decoders, self.ups, self.dec_ropes, encs[::-1]):
-            x = rope(x)
+        for decoder, up, enc_skip in zip(self.decoders, self.ups, encs[::-1]):
             x = up(x)
-            x = x + enc_skip
-            x = decoder(x)
+            H = H * 2
+            W = W * 2
+            cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
+            x = torch.cat([x, enc_skip], dim=-1)
+            x = decoder.dec_forward(x, cond, (H, W))
 
-        x = rearrange(x, 'b (h w) c -> b c h w', h=H, w=W)
-        if self.stack and self._stack_forward_flag:
-            x = self.ending2(x)
-            self._stack_forward_flag = False
-        else:
-            x = self.ending(x)
-            self._stack_forward_flag = True
+        x = rearrange(x, "b h w c -> b c h w", h=H, w=W)
+        x = self.ending(x)
 
         x = x[..., :H, :W]
 
         return x
 
-    def stacking_forward(self, inp, cond, time):
-        out = self._forward_once(inp, cond, time)
-        out = self._forward_once(out, cond, time)
-
-        return out
-
     def _forward_implem(self, *args, **kwargs):
-        if not self.stack:
-            return self._forward_once(*args, **kwargs)
-        else:
-            return self.stacking_forward(*args, **kwargs)
+        return self._forward_once(*args, **kwargs)
 
     @torch.no_grad()
-    def val_step(self, ms, lms, pan):
-        if self.patch_merge:
-            sr = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
+    def val_step(self, ms, lms, pan, patch_merge=None):
+        if patch_merge is None:
+            patch_merge = self.patch_merge
+
+        if patch_merge:
+            _patch_merge_model = PatchMergeModule(
+                self,
+                crop_batch_size=64,
+                patch_size_list=[16, 16 * self.upscale, 16 * self.upscale],
+                scale=self.upscale,
+                patch_merge_step=self.patch_merge_step,
+            )
+            sr = _patch_merge_model.forward_chop(ms, lms, pan)[0] + lms
         else:
             self.alter_ropes(pan.shape[-1])
-            sr = self._forward_implem(lms, pan)
+            sr = self._forward_implem(lms, pan) + lms
             self.alter_ropes(self.pt_img_size)
-            
+
         return sr
 
     def train_step(self, ms, lms, pan, gt, criterion):
-        sr = self._forward_implem(lms, pan)
+        sr = self._forward_implem(lms, pan) + lms
         loss = criterion(sr, gt)
 
         return sr, loss
@@ -834,7 +978,6 @@ class ConditionalNAFNet(BaseModel):
         x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
         return x
 
-
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
@@ -849,7 +992,6 @@ if __name__ == "__main__":
         dec_blk_nums=[2]*3,
         pt_img_size=64,
         if_rope=False,
-        stack=False,
     ).to(device)
 
     img_size = 16

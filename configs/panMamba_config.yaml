@@ -66,11 +66,11 @@ network_configs:
   # drop_path_rate: 0.0
 
   ## small config
-  width: 32
+  width: 16
   middle_blk_num: 2
   enc_blk_nums: [2,2,2]
   dec_blk_nums: [2,2,2]
-  ssm_convs: [11, 11, 11]
+  ssm_convs: [11, 9, 7]
   drop_path_rate: 0.1
 
   ## base config

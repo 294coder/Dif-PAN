@@ -115,7 +115,6 @@ def val(
                 ep_loss_dict2str(val_loss_dict),
                 f"\n {dict_to_str(acc_ave)}" if args.log_metrics else ""
             )
-    dist.barrier()
     return acc_ave, val_loss / i  # only rank 0 is reduced and other ranks are original data
 
 

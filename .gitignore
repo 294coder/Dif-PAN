@@ -2,9 +2,16 @@
 /__pycache__/
 /*/__pycache__/
 /*/*/__pycache__/
+/*.zip
 /.idea
 /.cache/
 /ir_TNO/
+/*/*/*/*.so
+/*/*/*/*.o
+/*/*/*/*.ninja
+/*/*/*/*/*.pyc
+
+
 
 /.history/
 /.idea/
