@@ -40,7 +40,7 @@ class PatchMergeModule(nn.Module):
         patch_size_list=[],
         scale=4,
         *,
-        hisi=True,
+        # hisi=True,
         device="cuda:0",
         bs_axis_merge=True,
     ):
@@ -74,15 +74,14 @@ class PatchMergeModule(nn.Module):
         # net.eval()
         # self.forward = partial(net.patch_merge_step, hisi=hisi, split_size=patch_size)
         # self.hisi = hisi
-        assert (net is not None) or (
-            patch_merge_step is not None
-        ), "@net and @patch_merge_step cannot be None at the same time"
+        assert (net is not None) or (patch_merge_step is not None), "@net and @patch_merge_step cannot be None at the same time"
         if patch_merge_step:
             self.forward = patch_merge_step  # partial(self.patch_merge_step, split_size=patch_size_list)
         else:
-            self.forward = partial(
-                net.patch_merge_step, hisi=hisi, split_size=patch_size_list[-1]
-            )
+            # self.forward = partial(
+            #     net.patch_merge_step, hisi=hisi, split_size=patch_size_list[-1]
+            # )
+            self.forward = partial(net.patch_merge_step, split_size=patch_size_list[-1])
 
     # def forward(self, *x):
     #     assert len(x) == 2, print(len(x))

@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <assert.h>
 #define MIN_VALUE (-1e38)
-#define CHANNEL_SPLIT (256 / 16)
-#define TOKEN_SPLIT (256 / CHANNEL_SPLIT) // the number of split tokens
+#define CHANNEL_SPLIT (512 / 32)
+#define TOKEN_SPLIT (512 / CHANNEL_SPLIT) // the number of split tokens
 #define IDEAL_T_LEN (Tmax / TOKEN_SPLIT)
 
 

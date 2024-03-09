@@ -7,7 +7,7 @@
 			"path": "../../datasets"
 		},
 		{
-			"path": "../efficient-RWKV-Vmamba"
+			"path": "../effecient_rwkv_mamba"
 		}
 	],
 	"settings": {

@@ -11,6 +11,9 @@ from timm.layers import DropPath, trunc_normal_
 from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 
+import sys
+sys.path.append('./')
+
 from model.module.vrwkv import VRWKV_SpatialMix, VRWKV_ChannelMix
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
@@ -476,10 +479,10 @@ def window_reverse(windows, window_size, H, W):
     return x
 
 
-class Block(nn.Module):
+class RWKVBlock(nn.Module):
     def __init__(self, cond_chan, n_embd, n_layer, layer_id, shift_mode='q_shift',
-                 channel_gamma=1/4, shift_pixel=1, drop_path=0., hidden_rate=4,
-                 init_mode='fancy', init_values=None, post_norm=False, key_norm=False,
+                 channel_gamma=0, shift_pixel=1, drop_path=0., hidden_rate=4,
+                 init_mode='global', init_values=None, post_norm=True, key_norm=True,
                  with_cp=False):
         super().__init__()
         self.layer_id = layer_id
@@ -489,9 +492,9 @@ class Block(nn.Module):
         if self.layer_id == 0:
             self.ln0 = nn.LayerNorm(n_embd)
 
-        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd),
-                                         nn.Linear(n_embd+cond_chan, n_embd, bias=False),
-                                         nn.Linear(cond_chan, n_embd*2),])
+        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd)])
+                                        #  nn.Linear(n_embd, n_embd*2),]
+                                        # )
         self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, shift_mode,
                                    channel_gamma, shift_pixel, init_mode,
                                    key_norm=key_norm)
@@ -506,11 +509,13 @@ class Block(nn.Module):
             self.gamma2 = nn.Parameter(init_values * torch.ones((n_embd)), requires_grad=True)
         self.with_cp = with_cp
 
-    def forward(self, x, cond, patch_resolution=None):
+    def forward(self, x:torch.Tensor, cond:torch.Tensor, patch_resolution=None):
+        b, n, c = x.shape
         cond = self.fuse_convs[0](cond)
-        x = torch.cat([x, cond], dim=-1)
-        x = self.fuse_convs[1](x)
-        scale, shift = self.fuse_convs[2](cond).chunk(2, dim=-1)
+        # x = torch.cat([x, cond], dim=-1)
+        # x = self.fuse_convs[1](x)
+        x = x + cond
+        # scale, shift = self.fuse_convs[1](cond).chunk(2, dim=-1)
         
         def _inner_forward(x):
             if self.layer_id == 0:
@@ -518,17 +523,17 @@ class Block(nn.Module):
             if self.post_norm:
                 if self.layer_scale:
                     x = x + self.drop_path(self.gamma1 * self.ln1(self.att(x, patch_resolution)))
-                    x = x * scale + self.drop_path(self.gamma2 * self.ln2(self.ffn(x, patch_resolution))) + shift
+                    x = x + self.drop_path(self.gamma2 * self.ln2(self.ffn(x, patch_resolution)))
                 else:
                     x = x + self.drop_path(self.ln1(self.att(x, patch_resolution)))
-                    x = x * scale + self.drop_path(self.ln2(self.ffn(x, patch_resolution))) + shift
+                    x = x + self.drop_path(self.ln2(self.ffn(x, patch_resolution)))
             else:
                 if self.layer_scale:
                     x = x + self.drop_path(self.gamma1 * self.att(self.ln1(x), patch_resolution))
-                    x = x * scale + self.drop_path(self.gamma2 * self.ffn(self.ln2(x), patch_resolution)) + shift
+                    x = x + self.drop_path(self.gamma2 * self.ffn(self.ln2(x), patch_resolution))
                 else:
                     x = x + self.drop_path(self.att(self.ln1(x), patch_resolution))
-                    x = x * scale + self.drop_path(self.ffn(self.ln2(x), patch_resolution)) + shift
+                    x = x + self.drop_path(self.ffn(self.ln2(x), patch_resolution))
             return x
         if self.with_cp and x.requires_grad:
             x = cp.checkpoint(_inner_forward, x)
@@ -545,19 +550,43 @@ class Sequential(nn.Module):
 
     def __getitem__(self, idx):
         return self.mods[idx]
+
+    # def reshaping(func):
+    #     def _reshaping(self, feat, cond, patch_resolution):
+    #         b, h, w, c = feat.shape
+    #         cond_chan = cond.shape[1]
+    #         cond = cond.permute(0, 2, 3, 1).view(b, -1, cond_chan)
+    #         feat = feat.view(b, -1, c)
+    #         outp = func(self, feat, cond, patch_resolution)
+    #         outp = outp.view(b, h, w, -1)
+    #         return outp
+
+    #     return _reshaping
     
+    # @reshaping
     def enc_forward(self, feat, cond, patch_resolution):
+        b, h, w, c = feat.shape
+        cond_chan = cond.shape[1]
+        cond = cond.permute(0, 2, 3, 1).reshape(b, -1, cond_chan)
+        feat = feat.reshape(b, -1, c)
         outp = feat
         for mod in self.mods:
             outp = mod(outp, cond, patch_resolution)
-        return outp
+        outp = outp.reshape(b, h, w, -1)
+        return outp.contiguous()
 
+    # @reshaping
     def dec_forward(self, feat, cond, patch_resolution):
+        b, h, w, c = feat.shape
+        cond_chan = cond.shape[1]
+        cond = cond.permute(0, 2, 3, 1).reshape(b, -1, cond_chan)
+        feat = feat.reshape(b, -1, c)
         outp = feat
         outp = self.mods[0](outp)
         for mod in self.mods[1:]:
             outp = mod(outp, cond, patch_resolution)
-        return outp
+        outp = outp.reshape(b, h, w, -1)
+        return outp.contiguous()
 
 
 class SquareReLU(nn.Module):
@@ -728,6 +757,7 @@ def down(chan):
         # Rearrange('b h w c -> b c h w', h=h, w=w),
         Permute("c_first"),
         nn.Conv2d(chan, 2 * chan, 2, 2),
+        # nn.Upsample(scale_factor=0.5, mode="bilinear"),
         # Rearrange('b c h w -> b h w c'),
         Permute("c_last"),
     )
@@ -747,7 +777,7 @@ def up(chan):
     )
 
 
-@register_model("panMamba")
+@register_model("panRWKV")
 class ConditionalNAFNet(BaseModel):
     def __init__(
         self,
@@ -758,7 +788,6 @@ class ConditionalNAFNet(BaseModel):
         middle_blk_num=1,
         enc_blk_nums=[],
         dec_blk_nums=[],
-        ssm_convs=[],
         upscale=1,
         if_abs_pos=True,
         if_rope=False,
@@ -823,7 +852,7 @@ class ConditionalNAFNet(BaseModel):
             self.encoders.append(
                 Sequential(
                     *[
-                        Block(
+                        RWKVBlock(
                             condition_channel, chan, depth, layer_id, 
                             drop_path=inter_dpr[n_prev_blks + i],
                         )
@@ -839,7 +868,7 @@ class ConditionalNAFNet(BaseModel):
         # middle layer
         self.middle_blks = Sequential(
             *[
-                Block(
+                RWKVBlock(
                     condition_channel, chan, depth, layer_id, 
                     drop_path=inter_dpr[n_prev_blks + i],
                 )
@@ -849,7 +878,6 @@ class ConditionalNAFNet(BaseModel):
         n_prev_blks += middle_blk_num
 
         # decoder
-        ssm_convs = list(reversed(ssm_convs))
         for layer_id, num in enumerate(reversed(dec_blk_nums), layer_id):
             self.ups.append(up(chan))
             chan = chan // 2
@@ -859,7 +887,7 @@ class ConditionalNAFNet(BaseModel):
                 Sequential(
                     nn.Linear(chan * 2, chan),
                     *[
-                        Block(
+                        RWKVBlock(
                             condition_channel, chan, depth, layer_id, 
                             drop_path=inter_dpr[n_prev_blks + i],
                         )
@@ -872,22 +900,22 @@ class ConditionalNAFNet(BaseModel):
         self.padder_size = 2 ** len(self.encoders)
 
         # init
-        print("============= init network =================")
-        self.apply(self._init_weights)
+    #     print("============= init network =================")
+    #     self.apply(self._init_weights)
 
-    def _init_weights(self, m: nn.Module):
-        # print(type(m))
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=0.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="leaky_relu")
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+    # def _init_weights(self, m: nn.Module):
+    #     # print(type(m))
+    #     if isinstance(m, nn.Linear):
+    #         trunc_normal_(m.weight, std=0.02)
+    #         if isinstance(m, nn.Linear) and m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
+    #     elif isinstance(m, nn.LayerNorm):
+    #         nn.init.constant_(m.bias, 0)
+    #         nn.init.constant_(m.weight, 1.0)
+    #     elif isinstance(m, nn.Conv2d):
+    #         nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="leaky_relu")
+    #         if m.bias is not None:
+    #             nn.init.constant_(m.bias, 0)
 
     def alter_ropes(self, ft_img_size):
         if ft_img_size != self.pt_img_size and self.rope:
@@ -980,8 +1008,15 @@ class ConditionalNAFNet(BaseModel):
 
 if __name__ == "__main__":
     from torch.cuda import memory_summary
+    import colored_traceback.always
+    
+    # torch.backends.cuda.matmul.allow_tf32 = True
+    # torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = False
+    # torch.backends.cudnn.allow_tf32 = True
 
-    device = torch.device("cuda:2")
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
     net = ConditionalNAFNet(
         img_channel=31,
         condition_channel=1,
@@ -1002,15 +1037,26 @@ if __name__ == "__main__":
 
     # net = torch.compile(net)
     
-    # out = net._forward_once(img, cond)
-    # print(out.shape)
+    out = net._forward_once(img, cond)
+    print(out.shape)
+    sr = torch.randn(1, 31, img_size*scale, img_size*scale).to(device)
+    loss = F.mse_loss(out, sr)
+    loss.backward()
+    print(loss)
     
     # test patch merge
     # sr = net.val_step(ms, img, cond)
     # print(sr.shape)
 
     # print(memory_summary(device=device, abbreviated=False))
-    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    
+    n_params = 0
+    for p in net.parameters():
+        n_params += p.numel()
+    
+    print(f'network has {n_params/1024**2} parameters')
+    
+    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    net.forward = net._forward_once
-    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    # net.forward = net._forward_once
+    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
