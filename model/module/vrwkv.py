@@ -342,120 +342,125 @@ class Block(nn.Module):
 
 
 # @BACKBONES.register_module()
-# class VRWKV(BaseBackbone):
-#     def __init__(self,
-#                  img_size=224,
-#                  patch_size=16,
-#                  in_channels=3,
-#                  out_indices=-1,
-#                  drop_rate=0.,
-#                  embed_dims=256,
-#                  depth=12,
-#                  drop_path_rate=0.,
-#                  channel_gamma=1/4,
-#                  shift_pixel=1,
-#                  shift_mode='q_shift',
-#                  init_mode='fancy',
-#                  post_norm=False,
-#                  key_norm=False,
-#                  init_values=None,
-#                  hidden_rate=4,
-#                  final_norm=True,
-#                  interpolate_mode='bicubic',
-#                  with_cp=False,
-#                  init_cfg=None):
-#         super().__init__(init_cfg)
-#         self.embed_dims = embed_dims
-#         self.num_extra_tokens = 0
-#         self.num_layers = depth
-#         self.drop_path_rate = drop_path_rate
+class VRWKV(nn.Module):
+    def __init__(self,
+                 img_size=224,
+                 patch_size=16,
+                 in_channels=3,
+                 out_indices=-1,
+                 drop_rate=0.,
+                 embed_dims=256,
+                 depth=12,
+                 drop_path_rate=0.,
+                 channel_gamma=1/4,
+                 shift_pixel=1,
+                 shift_mode='q_shift',
+                 init_mode='fancy',
+                 post_norm=False,
+                 key_norm=False,
+                 init_values=None,
+                 hidden_rate=4,
+                 final_norm=True,
+                 interpolate_mode='bicubic',
+                 with_cp=False,
+                 init_cfg=None):
+        super().__init__(init_cfg)
+        self.embed_dims = embed_dims
+        self.num_extra_tokens = 0
+        self.num_layers = depth
+        self.drop_path_rate = drop_path_rate
 
-#         self.patch_embed = PatchEmbed(
-#             in_channels=in_channels,
-#             input_size=img_size,
-#             embed_dims=self.embed_dims,
-#             conv_type='Conv2d',
-#             kernel_size=patch_size,
-#             stride=patch_size,
-#             bias=True)
+        self.patch_embed = PatchEmbed(
+            in_channels=in_channels,
+            input_size=img_size,
+            embed_dims=self.embed_dims,
+            conv_type='Conv2d',
+            kernel_size=patch_size,
+            stride=patch_size,
+            bias=True)
         
-#         self.patch_resolution = self.patch_embed.init_out_size
-#         num_patches = self.patch_resolution[0] * self.patch_resolution[1]
+        self.patch_resolution = self.patch_embed.init_out_size
+        num_patches = self.patch_resolution[0] * self.patch_resolution[1]
 
-#         # Set position embedding
-#         self.interpolate_mode = interpolate_mode
-#         self.pos_embed = nn.Parameter(
-#             torch.zeros(1, num_patches, self.embed_dims))
+        # Set position embedding
+        self.interpolate_mode = interpolate_mode
+        self.pos_embed = nn.Parameter(
+            torch.zeros(1, num_patches, self.embed_dims))
         
-#         self.drop_after_pos = nn.Dropout(p=drop_rate)
+        self.drop_after_pos = nn.Dropout(p=drop_rate)
 
-#         if isinstance(out_indices, int):
-#             out_indices = [out_indices]
-#         assert isinstance(out_indices, Sequence), \
-#             f'"out_indices" must by a sequence or int, ' \
-#             f'get {type(out_indices)} instead.'
-#         for i, index in enumerate(out_indices):
-#             if index < 0:
-#                 out_indices[i] = self.num_layers + index
-#             assert 0 <= out_indices[i] <= self.num_layers, \
-#                 f'Invalid out_indices {index}'
-#         self.out_indices = out_indices
-#         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
-#         self.layers = nn.ModuleList()
-#         for i in range(self.num_layers):
-#             self.layers.append(Block(
-#                 n_embd=embed_dims,
-#                 n_layer=depth,
-#                 layer_id=i,
-#                 channel_gamma=channel_gamma,
-#                 shift_pixel=shift_pixel,
-#                 shift_mode=shift_mode,
-#                 hidden_rate=hidden_rate,
-#                 drop_path=dpr[i],
-#                 init_mode=init_mode,
-#                 post_norm=post_norm,
-#                 key_norm=key_norm,
-#                 init_values=init_values,
-#                 with_cp=with_cp
-#             ))
+        if isinstance(out_indices, int):
+            out_indices = [out_indices]
+        assert isinstance(out_indices, Sequence), \
+            f'"out_indices" must by a sequence or int, ' \
+            f'get {type(out_indices)} instead.'
+        for i, index in enumerate(out_indices):
+            if index < 0:
+                out_indices[i] = self.num_layers + index
+            assert 0 <= out_indices[i] <= self.num_layers, \
+                f'Invalid out_indices {index}'
+        self.out_indices = out_indices
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
+        self.layers = nn.ModuleList()
+        for i in range(self.num_layers):
+            self.layers.append(Block(
+                n_embd=embed_dims,
+                n_layer=depth,
+                layer_id=i,
+                channel_gamma=channel_gamma,
+                shift_pixel=shift_pixel,
+                shift_mode=shift_mode,
+                hidden_rate=hidden_rate,
+                drop_path=dpr[i],
+                init_mode=init_mode,
+                post_norm=post_norm,
+                key_norm=key_norm,
+                init_values=init_values,
+                with_cp=with_cp
+            ))
 
-#         self.final_norm = final_norm
-#         if final_norm:
-#             self.ln1 = nn.LayerNorm(self.embed_dims)
+        self.final_norm = final_norm
+        if final_norm:
+            self.ln1 = nn.LayerNorm(self.embed_dims)
 
 
-#     def forward(self, x):
-#         B = x.shape[0]
-#         x, patch_resolution = self.patch_embed(x)
+    def forward(self, x):
+        B = x.shape[0]
+        x, patch_resolution = self.patch_embed(x)
 
-#         x = x + resize_pos_embed(
-#             self.pos_embed,
-#             self.patch_resolution,
-#             patch_resolution,
-#             mode=self.interpolate_mode,
-#             num_extra_tokens=self.num_extra_tokens)
+        # x = x + resize_pos_embed(
+        #     self.pos_embed,
+        #     self.patch_resolution,
+        #     patch_resolution,
+        #     mode=self.interpolate_mode,
+        #     num_extra_tokens=self.num_extra_tokens)
         
-#         x = self.drop_after_pos(x)
+        x = self.drop_after_pos(x)
 
-#         outs = []
-#         for i, layer in enumerate(self.layers):
-#             x = layer(x, patch_resolution)
+        outs = []
+        for i, layer in enumerate(self.layers):
+            x = layer(x, patch_resolution)
 
-#             if i == len(self.layers) - 1 and self.final_norm:
-#                 x = self.ln1(x)
+            if i == len(self.layers) - 1 and self.final_norm:
+                x = self.ln1(x)
 
-#             if i in self.out_indices:
-#                 B, _, C = x.shape
-#                 patch_token = x.reshape(B, *patch_resolution, C)
-#                 patch_token = patch_token.permute(0, 3, 1, 2)
+            if i in self.out_indices:
+                B, _, C = x.shape
+                patch_token = x.reshape(B, *patch_resolution, C)
+                patch_token = patch_token.permute(0, 3, 1, 2)
 
-#                 out = patch_token
-#                 outs.append(out)
-#         return tuple(outs)
+                out = patch_token
+                outs.append(out)
+        return tuple(outs)
 
 if __name__ == '__main__':
-    device = 'cuda:1'
+    device = 'cuda:0'
     net = Block(32, 2, 1).to(device)
     x = torch.randn(1, 64*64, 32).to(device)
     
-    print(net(x, (64, 64)).shape)
+    # print(net(x, (64, 64)).shape)
+    y = net(x, (64, 64))
+    sr = torch.randn(1, 64*64, 32).to(device)
+    loss = F.mse_loss(y, sr)
+    print(loss)
+    loss.backward()

@@ -25,12 +25,12 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:2"
+device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "gf"
 save_format = "mat"
 full_res = False
-split_patch = False
+split_patch = True
 patch_size = 16
 ergas_ratio = 4
 patch_size_list = [
@@ -39,7 +39,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = False
+save_mat = True
 loop_func = (
     partial(
         ref_for_loop,
@@ -105,7 +105,7 @@ print("=" * 50)
 # p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 
 # p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
-p = "./weight/lformer_dcu45ddw.pth"  # lformer
+# p = "./weight/lformer_dcu45ddw.pth"  # lformer
 
 # ========================================================
 
@@ -173,6 +173,8 @@ p = "./weight/lformer_dcu45ddw.pth"  # lformer
 # p = './weight/pmacnet_y2k8paq1.pth'  # pmacnet
 
 # p = './weight/hpmnet_2re44fdd/ep_600.pth'
+
+p = './weight/lformer_3dvlsog6.pth'
 # =================================================
 
 # ===============QB checkpoint=====================

@@ -1,6 +1,6 @@
 import argparse
 import os
-os.environ['CUDA_VISIBLE_DEVICES']='0,1'
+# os.environ['CUDA_VISIBLE_DEVICES']='0,1'
 import os.path as osp
 
 import h5py

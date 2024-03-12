@@ -36,7 +36,7 @@ network_configs:
   #   n_stage: 5
   lformer:
     pan_dim: 1
-    lms_dim: 8 #102 #128
+    lms_dim: 4 #102 #128
     attn_dim: 32
     hp_dim: 32
     n_stage: 5
