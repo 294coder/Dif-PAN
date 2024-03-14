@@ -1,3 +1,4 @@
+from warnings import warn
 import torch
 from collections import OrderedDict
 from torch_ema import ExponentialMovingAverage
@@ -16,24 +17,31 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
     params_load = params
     # may be tedious but useful and safe to avoid 'module.' prefix caused error
     if not strict:
-        print('warning: model load strict is False, ' 
-              'set it to True if you know what you are doing')
+        warn('model load strict is False, set it to True if you know what you are doing')
         
     def _load_fn(model, params_load, strict):    
         if 'ema' not in spec_key:  # ordered dict
             model.load_state_dict(params_load, strict=strict)
         else:  # sequential list
-            for s_param, param in zip(params_load, model.parameters()):
+            for s_param, (name, param) in zip(params_load, model.named_parameters()):
+                if s_param.data.shape != param.data.shape:
+                    if strict:
+                        raise RuntimeError(f'skip the shape mismatched param, param name {name}, \
+                                          current shape {param.data.shape} but loaded shape {s_param.data.shape}')
+                    else:
+                        warn(f'skip the shape mismatched param, param name {name}, \
+                            current shape {param.data.shape} but loaded shape {s_param.data.shape}')
                 param.data.copy_(s_param.data)
     try:
         _load_fn(model, params_load, strict)
     except Exception:
+        # data parallel mode will save params with keys' prefix is 'module'.
         odict = OrderedDict()
         for k, v in params_load.items():
             odict['module.' + k] = v
             params[spec_key] = odict
         
-        if 'ema' not in spec_key: 
+        if 'ema' not in spec_key:
             _load_fn(model, params_load, strict)
         else: 
             raise RuntimeError('ema model load failed! shape of params does not match!')

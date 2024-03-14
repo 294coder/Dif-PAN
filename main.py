@@ -427,7 +427,7 @@ if __name__ == "__main__":
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "5700"
-    os.environ["TRANSFORMERS_CACHE"] = ".cache/transformers"
+    os.environ["HF_HOME"] = ".cache/transformers"
     os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
     args = get_args()

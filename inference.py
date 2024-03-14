@@ -39,7 +39,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = True
+save_mat = False
 loop_func = (
     partial(
         ref_for_loop,
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "lformer"
+name = "panMamba"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -174,7 +174,9 @@ print("=" * 50)
 
 # p = './weight/hpmnet_2re44fdd/ep_600.pth'
 
-p = './weight/lformer_3dvlsog6.pth'
+# p = './weight/lformer_3dvlsog6.pth'
+
+p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 # =================================================
 
 # ===============QB checkpoint=====================

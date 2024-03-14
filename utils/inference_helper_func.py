@@ -25,26 +25,32 @@ def has_patch_merge_model(model: nn.Module):
     return (hasattr(model, '_patch_merge_model')) or (hasattr(model, 'patch_merge_model'))
 
 
+def patch_merge_in_val_step(model):
+    return 'patch_merge' in list(inspect.signature(model.val_step).parameters.keys())
+
+
 @torch.no_grad()
+@torch.inference_mode()
 def unref_for_loop(model,
                    dl: DataLoader,
                    device,
-                   sz,
                    *,
                    split_patch=False,
                    **patch_merge_module_kwargs):
-    bs = dl.batch_size
     all_sr = []
     try:
         spa_size = tuple(dl.dataset.lms.shape[-2:])
     except AttributeError:
         spa_size = tuple(dl.dataset.rgb.shape[-2:])
     
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
+    analysis = AnalysisPanAcc(ratio=patch_merge_module_kwargs.get('ergas_ratio', 4), ref=False,
+                              sensor=patch_merge_module_kwargs.get('sensor', 'DEFAULT'),
+                              default_max_value=patch_merge_module_kwargs.get('default_max_value', None))
     
     if split_patch:
         # check if has the patch merge model
-        if not has_patch_merge_model(model):
+        if not (has_patch_merge_model(model) or patch_merge_in_val_step(model)):
             # assert bs == 1, 'batch size should be 1'
             
             # warp the model into PatchMergeModule
@@ -54,23 +60,37 @@ def unref_for_loop(model,
         pan, ms, lms = pan.to(device).float(), ms.to(device).float(), lms.to(device).float()
         # split the image into several patches to avoid gpu OOM
         if split_patch:
-            pan_nc = pan.size(1)
-            ms_nc = ms.size(1)
-            input = (
-                F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
-                lms,
-                torch.cat([pan, torch.zeros(bs, ms_nc - pan_nc, *spa_size).to(device)], dim=1)
-            )
-            sr = model.forward_chop(*input)[0]
-        # read images just once
+            input = (ms, lms, pan)
+            if hasattr(model, 'forward_chop'):
+                # split the image into several patches to avoid gpu OOM
+                # pan_nc = pan.size(1)
+                # ms_nc = ms.size(1)
+                # input = (
+                #     F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
+                #     lms,
+                #     torch.cat([pan, torch.zeros(bs, ms_nc - pan_nc, *spa_size).to(device)], dim=1)
+                # )
+                sr = model.forward_chop(*input)[0]
+            elif patch_merge_in_val_step(model):
+                sr = model.val_step(*input, patch_merge=True)
+            else:
+                raise NotImplemented('model should have @forward_chop or patch_merge arg in @val_step')
         else:
-            sr = model.val_step(ms, lms, pan)
+            if patch_merge_in_val_step(model):
+                sr = model.val_step(ms, lms, pan, False)
+            else:
+                sr = model.val_step(ms, lms, pan)
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
+        
+        analysis(sr, ms, lms, pan)
+        
         viz_batch(sr.detach().cpu(), suffix='sr', start_index=i)
         viz_batch(ms.detach().cpu(), suffix='ms', start_index=i)
         viz_batch(pan.detach().cpu(), suffix='pan', start_index=i)
+        
+    print(analysis.print_str())
 
     return all_sr
 
@@ -80,7 +100,6 @@ def unref_for_loop(model,
 def ref_for_loop(model,
                  dl,
                  device,
-                 crop_bs,
                  *,
                  split_patch=False,
                  ergas_ratio=4,
@@ -90,7 +109,7 @@ def ref_for_loop(model,
     all_sr = []
     inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
-    if not has_patch_merge_model(model):
+    if not (has_patch_merge_model(model) or patch_merge_in_val_step(model)):
             # assert bs == 1, 'batch size should be 1'
             
             # warp the model into PatchMergeModule
@@ -102,12 +121,12 @@ def ref_for_loop(model,
             input = (ms, lms, pan)
             if hasattr(model, 'forward_chop'):
                 sr = model.forward_chop(*input)[0]
-            elif 'patch_merge' in inspect.getfullargspec(model.val_step).args:
+            elif patch_merge_in_val_step(model):
                 sr = model.val_step(*input, patch_merge=True)
             else:
                 raise NotImplemented('model should have @forward_chop or patch_merge arg in @val_step')
         else:
-            if 'patch_merge' in inspect.getfullargspec(model.val_step).args:
+            if patch_merge_in_val_step(model):
                 sr = model.val_step(ms, lms, pan, False)
             else:
                 sr = model.val_step(ms, lms, pan)

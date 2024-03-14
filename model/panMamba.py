@@ -630,7 +630,7 @@ class MambaInjectionBlock(nn.Module):
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
-            prev_state_gate=True,
+            prev_state_gate=False,
             **mamba_kwargs,
         )
 
@@ -1204,11 +1204,11 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=16,
-        middle_blk_num=1,
-        enc_blk_nums=[1, 1,],
-        dec_blk_nums=[1, 1],
-        ssm_convs=[3,3,3],
+        width=32,
+        middle_blk_num=2,
+        enc_blk_nums=[2, 2, 2],
+        dec_blk_nums=[2, 2, 2],
+        ssm_convs=[11, 11, 11],
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
@@ -1217,7 +1217,7 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    img_size = 32
+    img_size = 16
     scale = 8
     chan = 8
     pan_chan = 1
@@ -1228,10 +1228,10 @@ if __name__ == "__main__":
 
     # net = torch.compile(net)
 
-    out = net._forward_implem(img, cond)
-    loss = F.mse_loss(out, gt)
-    loss.backward()
-    print(loss)
+    # out = net._forward_implem(img, cond)
+    # loss = F.mse_loss(out, gt)
+    # loss.backward()
+    # print(loss)
     # find unused params
     # for n, p in net.named_parameters():
     #     if p.grad is None:

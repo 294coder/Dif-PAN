@@ -25,19 +25,19 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-python main.py --proj_name lformer_swin --arch lformer \
--b 20 --device 'cuda:2' --dataset 'gf2' \
---warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'lformer swin arch on gf2 dataset' \
---logger_on --log_metrics \
+# python main.py --proj_name lformer_swin --arch lformer \
+# -b 20 --device 'cuda:2' --dataset 'gf2' \
+# --warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer swin arch on gf2 dataset' \
+# --logger_on --log_metrics \
 
 
 ## panMamba arch
-# python main.py --proj_name panMamba --arch panMamba \
-# -b 46 --device 'cuda:0' --dataset 'wv3' \
-# --warm_up_epochs 0 --num_worker 4 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
-# --logger_on --log_metrics \
+python main.py --proj_name panMamba --arch panMamba \
+-b 46 --device 'cuda:0' --dataset 'gf2' \
+--warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on gf2 dataset' \
+--logger_on --log_metrics \
 #  --pretrain --pretrain_id 'immyzw0v' #--non_load_strict
 
 ## dcformer arch
