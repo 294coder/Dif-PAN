@@ -331,7 +331,7 @@ class SelectiveScanOflex(torch.autograd.Function):
         ctx.delta_softplus = delta_softplus
         out, x, *rest = selective_scan_cuda_oflex.fwd(u, delta, A, B, C, D, delta_bias, delta_softplus, 1, oflex)
         ctx.save_for_backward(u, delta, A, B, C, D, delta_bias, x)
-        return out, x
+        return out, x[:, :, -1, 1::2]
     
     @staticmethod
     @torch.cuda.amp.custom_bwd
@@ -539,9 +539,17 @@ def cross_selective_scan(
     if no_einsum:
         # previous states cache
         if prev_states is not None:
-            prev_states = F.conv1d(prev_states.view(B, -1, L), prev_sta_proj_w.view(-1, D, 1), bias=prev_sta_proj_bias.view(-1), groups=K)
-            gating = F.conv1d(xs.view(B, -1, L), xs_gate_weight.view(-1, D, 1), bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), groups=K)
-            xs = xs + prev_states * gating.sigmoid()
+            # print('use previous states')
+            prev_states = F.conv1d(prev_states.view(B, -1, prev_states.shape[-1]),  # [B, D, d_state]
+                                   prev_sta_proj_w.view(-1, D, 1),
+                                   bias=prev_sta_proj_bias.view(-1) if prev_sta_proj_bias is not None else None, 
+                                   groups=K)
+            gating = F.conv1d(xs.view(B, -1, L), 
+                              xs_gate_weight.view(-1, D, 1), 
+                              bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), 
+                              groups=K)
+            upd = torch.einsum('bkdn,bknl->bkdl', prev_states.view(B, K, -1, N), gating.view(B, K, -1, L))
+            xs = xs + upd
             
         x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
         dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
@@ -573,7 +581,6 @@ def cross_selective_scan(
         xs, dts, As, Bs, Cs, Ds, delta_bias, delta_softplus
     )
     ys: torch.Tensor = ys.view(B, K, D, H, W)
-    ssm_state = ssm_state.view(B, K, D, -1)  # [bs, k, ssm_ratio*d_state]
     
     y: torch.Tensor = CrossMerge.apply(ys)
 
@@ -754,11 +761,12 @@ class SS2D(nn.Module):
             # FIXME: may raise error when ssm_ratio * d_state is not equal to
             # the previous layer's
             self.ssm_state_proj = [
-                nn.Linear(ssm_ratio * d_state, ssm_ratio * d_state, bias=False, **factory_kwargs)
+                nn.Linear(d_inner, d_inner, bias=False, **factory_kwargs)
                 for _ in range(k_group)
             ]
+            # TODO: dt, A, B, C?
             self.xs_gate = [
-                nn.Linear(d_inner, (dt_rank + d_state * 2), bias=False, **factory_kwargs)
+                nn.Linear(d_inner, d_state, bias=False, **factory_kwargs)
                 for _ in range(k_group)
             ]
             self.ssm_state_weight = nn.Parameter(torch.stack([t.weight for t in self.ssm_state_proj], dim=0))
@@ -1146,6 +1154,7 @@ class VSSBlock(nn.Module):
         # =============================
         use_checkpoint: bool = False,
         post_norm: bool = False,
+        prev_state_gate: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -1177,6 +1186,7 @@ class VSSBlock(nn.Module):
                 initialize=ssm_init,
                 # ==========================
                 forward_type=forward_type,
+                prev_state_gate=prev_state_gate
             )
         
         self.drop_path = DropPath(drop_path)

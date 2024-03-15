@@ -34,11 +34,11 @@
 
 ## panMamba arch
 python main.py --proj_name panMamba --arch panMamba \
--b 46 --device 'cuda:0' --dataset 'gf2' \
---warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on gf2 dataset' \
+-b 14 --device 'cuda:2' --dataset 'harvard_x8' \
+--warm_up_epochs 0 --num_worker 0 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on harvrad x8 dataset' \
 --logger_on --log_metrics \
-#  --pretrain --pretrain_id 'immyzw0v' #--non_load_strict
+ --pretrain --pretrain_id 'u5mu512k' #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \
