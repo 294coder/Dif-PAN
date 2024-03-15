@@ -28,7 +28,7 @@ from model.module.rwkv_module import RWKV_TimeMix_x051a as TMixBlock
 from model.module.rwkv_module import Block as RKWVBlockCFirst
 
 # from mamba_ssm import Mamba
-from model.module.vmamba_module import VSSBlock
+from model.module.vmamba_module_v2 import VSSBlock
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 

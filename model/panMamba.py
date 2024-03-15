@@ -21,14 +21,14 @@ import sys
 sys.path.append("./")
 sys.path.append("../")
 
-ATTN_TYPE = "MAMBA_SS2D"
-assert ATTN_TYPE in ["MAMBA_VIM", "MAMBA_SS2D", "RWKV"]
-from model.module.rwkv_module import RWKV_ChannelMix_x051a as CMixBlock
-from model.module.rwkv_module import RWKV_TimeMix_x051a as TMixBlock
-from model.module.rwkv_module import Block as RKWVBlockCFirst
+# ATTN_TYPE = "MAMBA_SS2D"
+# assert ATTN_TYPE in ["MAMBA_VIM", "MAMBA_SS2D", "RWKV"]
+# from model.module.rwkv_module import RWKV_ChannelMix_x051a as CMixBlock
+# from model.module.rwkv_module import RWKV_TimeMix_x051a as TMixBlock
+# from model.module.rwkv_module import Block as RKWVBlockCFirst
 
 # from mamba_ssm import Mamba
-from model.module.vmamba_module_new import VSSBlock
+from model.module.vmamba_module_v3 import VSSBlock
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 

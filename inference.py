@@ -9,7 +9,7 @@ from scipy.io import savemat
 from datasets.TNO import TNODataset
 
 from datasets.wv3 import WV3Datasets
-from datasets.HISR import HISRDataSets
+from datasets.HISR import HISRDatasets
 from datasets.gf import GF2Datasets
 from datasets.FLIR_2 import FLIRDataset
 from model import build_network
@@ -314,7 +314,7 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     ds = WV3Datasets(d, hp=False, full_res=full_res)
 elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:
     d = h5py.File(path)
-    ds = HISRDataSets(d, full_res=full_res)
+    ds = HISRDatasets(d, full_res=full_res)
 elif dataset_type == "gf":
     d = h5py.File(path)
     ds = GF2Datasets(d, full_res=full_res)
