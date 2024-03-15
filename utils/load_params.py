@@ -1,5 +1,5 @@
-from warnings import warn
 import torch
+from warnings import warn
 from collections import OrderedDict
 from torch_ema import ExponentialMovingAverage
 
@@ -26,8 +26,7 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
             for s_param, (name, param) in zip(params_load, model.named_parameters()):
                 if s_param.data.shape != param.data.shape:
                     if strict:
-                        raise RuntimeError(f'skip the shape mismatched param, param name {name}, \
-                                          current shape {param.data.shape} but loaded shape {s_param.data.shape}')
+                        raise RuntimeError('ema model load failed! shape of params does not match!')
                     else:
                         warn(f'skip the shape mismatched param, param name {name}, \
                             current shape {param.data.shape} but loaded shape {s_param.data.shape}')
