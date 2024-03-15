@@ -601,6 +601,7 @@ class MambaInjectionBlock(nn.Module):
         forward_type="v4",
         use_ckpt=False,
         local_shift_size=0,
+        prev_state_gate=False,
         **mamba_kwargs,
     ):
         super().__init__()
@@ -630,6 +631,7 @@ class MambaInjectionBlock(nn.Module):
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
+            prev_state_gate=prev_state_gate,
             **mamba_kwargs,
         )
 
@@ -647,6 +649,7 @@ class MambaInjectionBlock(nn.Module):
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
+            prev_state_gate=prev_state_gate,
             **mamba_kwargs,
         )
         # self.norm = norm_layer(inner_chan)
