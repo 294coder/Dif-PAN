@@ -195,6 +195,9 @@ def train(
                 else:
                     loss = loss_out
                 ep_loss += loss
+                if torch.isnan(loss).any():
+                    raise ValueError("loss is nan")
+                
                 ep_loss_dict = accum_loss_dict(ep_loss_dict, loss_d)
 
             # update parameters

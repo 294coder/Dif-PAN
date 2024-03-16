@@ -1,7 +1,7 @@
 optimizer:
   name: "adamw"
-  lr: !!float 1e-3
-  weight_decay: !!float 1e-6
+  lr: !!float 1e-4
+  weight_decay: !!float 1e-3
 
 lr_scheduler:
   #  name: 'cos_anneal'
@@ -12,18 +12,18 @@ lr_scheduler:
   #  T_max: 2000
   #  eta_min: !!float 1e-8
 
-  name: "plateau"
-  mode: "min"
-  threshold: !!float 1e-5 # l1
-  min_lr: !!float 1e-6
-  patience: 40
-  factor: !!float 0.1
-  cooldown: 10
-  threshold_mode: "rel"
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 1e-5 # l1
+  # min_lr: !!float 1e-6
+  # patience: 40
+  # factor: !!float 0.1
+  # cooldown: 10
+  # threshold_mode: "rel"
 
-  # name: "multi_step"
-  # milestones: [100] #[100, 800]
-  # gamma: 0.1
+  name: "multi_step"
+  milestones: [100, 1000] #[100, 800]
+  gamma: 0.2
 
 max_norm: 0.03
 ema_decay: 0.999
@@ -54,10 +54,10 @@ path:
   harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
 network_configs:
-  img_channel: 8
-  condition_channel: 1
-  out_channel: 8
-  # tiny config
+  img_channel: 31
+  condition_channel: 3
+  out_channel: 31
+  # nano config
   # width: 8
   # middle_blk_num: 1
   # enc_blk_nums: [1, 1, 1]
@@ -66,28 +66,26 @@ network_configs:
   # drop_path_rate: 0.0
 
   ## small config
-  width: 16
+  # width: 16
+  # middle_blk_num: 2
+  # enc_blk_nums: [2,2,2]
+  # dec_blk_nums: [2,2,2]
+  # ssm_convs: [11, 9, 7]
+  # drop_path_rate: 0.1
+
+  ## base config
+  width: 32
   middle_blk_num: 2
   enc_blk_nums: [2,2,2]
   dec_blk_nums: [2,2,2]
-  ssm_convs: [11, 9, 7]
-  window_sizes: [8,8,8]
-  drop_path_rate: 0.0
+  ssm_convs: [11, 11, 11]
+  drop_path_rate: 0.2
 
-  ## base config
-  # width: 32
-  # middle_blk_num: 8
-  # enc_blk_nums: [2,6,8]
-  # dec_blk_nums: [2,6,8]
-  # ssm_convs: [11, 11, 9]
-  # window_sizes: [8,8,8]
-  # drop_path_rate: 0.2
-
-  pt_img_size: 64
   if_abs_pos: no # buggy: convergence is slow
   if_rope: no
+  use_prev_ssm_state: yes
   patch_merge: yes
-  upscale: 4
+  upscale: 8
 
 logger_config:
   base_path: ./log_file/

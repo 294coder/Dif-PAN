@@ -8,8 +8,11 @@ import h5py
 import random
 from typing import List, Tuple, Optional, Callable
 
+def default_dataset_fn(*x):
+    return x[0]
 
-class HISRDataSets(data.Dataset):
+
+class HISRDatasets(data.Dataset):
     # FIXME: when use this Dataset, you should set num_works to 0 or it will raise unpickable error
     def __init__(
         self,
@@ -20,7 +23,7 @@ class HISRDataSets(data.Dataset):
         *,
         dataset_fn=None
     ):
-        super(HISRDataSets, self).__init__()
+        super(HISRDatasets, self).__init__()
         # warning: you should not save file (h5py.File) in this class,
         # or it will raise CAN NOT BE PICKLED error in multiprocessing
         # FIXME: should pass @path rather than @file which is h5py.File object to avoid can not be pickled error
@@ -44,7 +47,7 @@ class HISRDataSets(data.Dataset):
                 self.dataset_fn = dataset_fn
             else: raise TypeError("dataset_fn should be a list of callable or a callable object")
         else:
-            self.dataset_fn = lambda *x: x[0]
+            self.dataset_fn = default_dataset_fn
         
         self.full_res = full_res
         data_s= self._split_parts(
@@ -190,7 +193,7 @@ class HISRDataSets(data.Dataset):
 if __name__ == "__main__":
     path = r"/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
     file = h5py.File(path)
-    dataset = HISRDataSets(file, aug_prob=0.9)
+    dataset = HISRDatasets(file, aug_prob=0.9)
     dl = data.DataLoader(
         dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True
     )

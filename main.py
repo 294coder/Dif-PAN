@@ -1,6 +1,6 @@
 import argparse
 import os
-os.environ['CUDA_VISIBLE_DEVICES']='0,1'
+# os.environ['CUDA_VISIBLE_DEVICES']='0,1'
 import os.path as osp
 
 import h5py
@@ -13,7 +13,7 @@ import colored_traceback.always
 from wandb.util import generate_id
 
 from datasets.FLIR_2 import FLIRDataset
-from datasets.HISR import HISRDataSets
+from datasets.HISR import HISRDatasets
 from datasets.TNO import TNODataset
 from datasets.gf import GF2Datasets
 from datasets.wv3 import WV3Datasets, make_datasets
@@ -328,8 +328,11 @@ def main(local_rank, args):
                 keys = ["LRHSI", "HSI_up", "RGB", "GT"]
                 if args.dataset.split("-")[-1] == "houston":
                     from einops import rearrange
+                    
+                    def permute_fn(x):
+                        return rearrange(x, "b h w c -> b c h w")
 
-                    dataset_fn = lambda x: rearrange(x, "b h w c -> b c h w")
+                    dataset_fn = permute_fn
                 else:
                     dataset_fn = None
 
@@ -337,10 +340,10 @@ def main(local_rank, args):
                     h5py_to_dict(h5_train, keys),
                     h5py_to_dict(h5_val, keys),
                 )
-                train_ds = HISRDataSets(
+                train_ds = HISRDatasets(
                     d_train, aug_prob=args.aug_probs[0], dataset_fn=dataset_fn
                 )
-                val_ds = HISRDataSets(
+                val_ds = HISRDatasets(
                     d_val, aug_prob=args.aug_probs[1], dataset_fn=dataset_fn
                 )
                 # del h5_train, h5_val
@@ -427,7 +430,7 @@ if __name__ == "__main__":
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "5700"
-    os.environ["TRANSFORMERS_CACHE"] = ".cache/transformers"
+    os.environ["HF_HOME"] = ".cache/transformers"
     os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
     args = get_args()

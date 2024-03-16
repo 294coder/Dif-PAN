@@ -9,7 +9,7 @@ from scipy.io import savemat
 from datasets.TNO import TNODataset
 
 from datasets.wv3 import WV3Datasets
-from datasets.HISR import HISRDataSets
+from datasets.HISR import HISRDatasets
 from datasets.gf import GF2Datasets
 from datasets.FLIR_2 import FLIRDataset
 from model import build_network
@@ -25,12 +25,12 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:2"
+device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "gf"
 save_format = "mat"
 full_res = False
-split_patch = False
+split_patch = True
 patch_size = 16
 ergas_ratio = 4
 patch_size_list = [
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "lformer"
+name = "panMamba"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -105,7 +105,7 @@ print("=" * 50)
 # p = "./weight/hpmnet_kqv7vcpy.pth"  # HMPNet
 
 # p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
-p = "./weight/lformer_dcu45ddw.pth"  # lformer
+# p = "./weight/lformer_dcu45ddw.pth"  # lformer
 
 # ========================================================
 
@@ -173,6 +173,10 @@ p = "./weight/lformer_dcu45ddw.pth"  # lformer
 # p = './weight/pmacnet_y2k8paq1.pth'  # pmacnet
 
 # p = './weight/hpmnet_2re44fdd/ep_600.pth'
+
+# p = './weight/lformer_3dvlsog6.pth'
+
+p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 # =================================================
 
 # ===============QB checkpoint=====================
@@ -310,7 +314,7 @@ if dataset_type in ["wv3", "qb", "wv2"]:
     ds = WV3Datasets(d, hp=False, full_res=full_res)
 elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:
     d = h5py.File(path)
-    ds = HISRDataSets(d, full_res=full_res)
+    ds = HISRDatasets(d, full_res=full_res)
 elif dataset_type == "gf":
     d = h5py.File(path)
     ds = GF2Datasets(d, full_res=full_res)

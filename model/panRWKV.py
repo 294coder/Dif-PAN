@@ -12,7 +12,7 @@ from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 
 import sys
-sys.path.append('./')
+sys.path.insert(1, './')
 
 from model.module.vrwkv import VRWKV_SpatialMix, VRWKV_ChannelMix
 from model.base_model import BaseModel, register_model, PatchMergeModule
@@ -492,9 +492,9 @@ class RWKVBlock(nn.Module):
         if self.layer_id == 0:
             self.ln0 = nn.LayerNorm(n_embd)
 
-        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd)])
-                                        #  nn.Linear(n_embd, n_embd*2),]
-                                        # )
+        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd),
+                                         nn.Linear(n_embd*2, n_embd, bias=False),
+                                         nn.Linear(n_embd, n_embd*2),])
         self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, shift_mode,
                                    channel_gamma, shift_pixel, init_mode,
                                    key_norm=key_norm)
@@ -551,19 +551,19 @@ class Sequential(nn.Module):
     def __getitem__(self, idx):
         return self.mods[idx]
 
-    # def reshaping(func):
-    #     def _reshaping(self, feat, cond, patch_resolution):
-    #         b, h, w, c = feat.shape
-    #         cond_chan = cond.shape[1]
-    #         cond = cond.permute(0, 2, 3, 1).view(b, -1, cond_chan)
-    #         feat = feat.view(b, -1, c)
-    #         outp = func(self, feat, cond, patch_resolution)
-    #         outp = outp.view(b, h, w, -1)
-    #         return outp
+    def reshaping(func):
+        def _reshaping(self, feat, cond, patch_resolution):
+            b, h, w, c = feat.shape
+            cond_chan = cond.shape[1]
+            cond = cond.permute(0, 2, 3, 1).view(b, -1, cond_chan)
+            feat = feat.view(b, -1, c)
+            outp = func(self, feat, cond, patch_resolution)
+            outp = outp.view(b, h, w, -1)
+            return outp
 
-    #     return _reshaping
+        return _reshaping
     
-    # @reshaping
+    @reshaping
     def enc_forward(self, feat, cond, patch_resolution):
         b, h, w, c = feat.shape
         cond_chan = cond.shape[1]
@@ -575,7 +575,7 @@ class Sequential(nn.Module):
         outp = outp.reshape(b, h, w, -1)
         return outp.contiguous()
 
-    # @reshaping
+    @reshaping
     def dec_forward(self, feat, cond, patch_resolution):
         b, h, w, c = feat.shape
         cond_chan = cond.shape[1]
@@ -1009,19 +1009,13 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
-    
-    # torch.backends.cuda.matmul.allow_tf32 = True
-    # torch.backends.cudnn.benchmark = False
-    # torch.backends.cudnn.deterministic = False
-    # torch.backends.cudnn.allow_tf32 = True
 
     device = torch.device("cuda:0")
-    torch.cuda.set_device(device)
     net = ConditionalNAFNet(
-        img_channel=31,
+        img_channel=8,
         condition_channel=1,
-        out_channel=31,
-        width=32,
+        out_channel=8,
+        width=16,
         middle_blk_num=2,
         enc_blk_nums=[2]*3,
         dec_blk_nums=[2]*3,
@@ -1031,31 +1025,24 @@ if __name__ == "__main__":
 
     img_size = 16
     scale = 4
-    ms = torch.randn(1, 31, img_size, img_size).to(device) 
-    img = torch.randn(1, 31, img_size*scale, img_size*scale).to(device)
+    ms = torch.randn(1, 8, img_size, img_size).to(device) 
+    img = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
     cond = torch.randn(1, 1, img_size*scale, img_size*scale).to(device)
 
     # net = torch.compile(net)
     
     out = net._forward_once(img, cond)
     print(out.shape)
-    sr = torch.randn(1, 31, img_size*scale, img_size*scale).to(device)
+    sr = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
     loss = F.mse_loss(out, sr)
-    loss.backward()
     print(loss)
+    loss.backward()
     
     # test patch merge
     # sr = net.val_step(ms, img, cond)
     # print(sr.shape)
 
-    # print(memory_summary(device=device, abbreviated=False))
-    
-    n_params = 0
-    for p in net.parameters():
-        n_params += p.numel()
-    
-    print(f'network has {n_params/1024**2} parameters')
-    
+    print(memory_summary(device=device, abbreviated=False))
     # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
     # net.forward = net._forward_once
