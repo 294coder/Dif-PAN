@@ -1211,7 +1211,7 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
-    device = torch.device("cuda:0")
+    device = torch.device("cuda:1")
     
     # forwawrd_type v4 model: 5.917M
     # + using prev_ssm_state: 8.651M
@@ -1219,11 +1219,11 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=32,
-        middle_blk_num=2,
-        enc_blk_nums=[2, 2, 2],
-        dec_blk_nums=[2, 2, 2],
-        ssm_convs=[11, 11, 11],
+        width=8,
+        middle_blk_num=1,
+        enc_blk_nums=[1, 1, 1],
+        dec_blk_nums=[1, 1, 1],
+        ssm_convs=[3, 3, 3],
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
@@ -1263,7 +1263,7 @@ if __name__ == "__main__":
 
     # print(torch.cuda.memory_summary(device=device))
 
-    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    net.forward = net._forward_implem
-    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    # net.forward = net._forward_implem
+    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))

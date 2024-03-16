@@ -1,6 +1,6 @@
 optimizer:
   name: "adamw"
-  lr: !!float 6e-4
+  lr: !!float 1e-4
   weight_decay: !!float 1e-3
 
 lr_scheduler:
@@ -12,20 +12,20 @@ lr_scheduler:
   #  T_max: 2000
   #  eta_min: !!float 1e-8
 
-  name: "plateau"
-  mode: "min"
-  threshold: !!float 1e-5 # l1
-  min_lr: !!float 1e-6
-  patience: 40
-  factor: !!float 0.1
-  cooldown: 10
-  threshold_mode: "rel"
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 1e-5 # l1
+  # min_lr: !!float 1e-6
+  # patience: 40
+  # factor: !!float 0.1
+  # cooldown: 10
+  # threshold_mode: "rel"
 
-  # name: "multi_step"
-  # milestones: [100] #[100, 800]
-  # gamma: 0.1
+  name: "multi_step"
+  milestones: [100, 1000] #[100, 800]
+  gamma: 0.2
 
-max_norm: 0.01
+max_norm: 0.03
 ema_decay: 0.999
 
 path:
