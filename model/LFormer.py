@@ -6,6 +6,8 @@ from einops import rearrange
 from beartype import beartype
 from typing import Tuple, List, Dict, Union, Optional, Any
 
+import sys
+sys.path.append('./')
 from model.base_model import register_model, BaseModel
 from utils import get_local
 
@@ -421,8 +423,8 @@ if __name__ == "__main__":
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
-        attn_dim=32,
-        hp_dim=32,
+        attn_dim=64,
+        hp_dim=64,
         n_stage=5,
         patch_merge=False,
         patch_size_list=[16, 64, 64],

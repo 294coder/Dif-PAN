@@ -528,7 +528,10 @@ def cross_selective_scan(
     def selective_scan(u, delta, A, B, C, D=None, delta_bias=None, delta_softplus=True):
         return SelectiveScan.apply(u, delta, A, B, C, D, delta_bias, delta_softplus, nrows, backnrows, ssoflex)
     
-    xs = CrossScan.apply(x)
+    try:
+        xs = CrossScan.apply(x)
+    except Exception:
+        print(x.shape)
     
     if no_einsum:
         x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
@@ -709,7 +712,7 @@ class SS2D(nn.Module):
         # conv =======================================
         _LARGE_KERNEL = True
         if _LARGE_KERNEL:
-            assert d_conv > 3, 'd_conv > 3'
+            assert d_conv >= 3, 'd_conv > 3'
         
         if d_conv > 1:
             self.conv2d = nn.Conv2d(

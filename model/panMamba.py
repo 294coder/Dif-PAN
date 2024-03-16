@@ -1,4 +1,5 @@
 from re import X
+from warnings import warn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -560,10 +561,11 @@ def window_partition(x, window_size):
     """
     B, H, W, C = x.shape
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+    n_windows = (H // window_size) * (W // window_size)
     windows = (
         x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
     )
-    return windows
+    return windows, n_windows
 
 
 def window_reverse(windows, window_size, H, W):
@@ -612,11 +614,13 @@ class MambaInjectionBlock(nn.Module):
             nn.Conv2d(in_chan, inner_chan, 1),
             nn.Conv2d(inner_chan, inner_chan, 3, 1, 1, groups=inner_chan),
         )
-        self.inner_to_outter_conv = nn.Linear(2*inner_chan, inner_chan)
+        # self.inner_to_outter_conv = nn.Linear(2*inner_chan, inner_chan)
         # self.lerp = nn.Sequential(LayerNorm(in_chan),
         #                           nn.AdaptiveAvgPool2d(1),
         #                           nn.Conv2d(in_chan, inner_chan*2, 1),
         #                           Rearrange('b c 1 1 -> b 1 1 c'))
+        
+        
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
             d_state=d_state,
@@ -632,25 +636,30 @@ class MambaInjectionBlock(nn.Module):
             use_checkpoint=use_ckpt,
             **mamba_kwargs,
         )
+        
 
         # v3: mamba in mamba
-        self.mamba_inner_shared = VSSBlock(
-            inner_chan,
-            d_state=d_state,
-            drop_path=drop_path,
-            mlp_ratio=1,
-            norm_layer=norm_layer,
-            mlp_drop_rate=0.0,
-            ssm_conv=ssm_conv,
-            ssm_dt_rank=dt_rank,
-            ssm_ratio=1,
-            ssm_init='v0',
-            forward_type=forward_type,
-            use_checkpoint=use_ckpt,
-            **mamba_kwargs,
-        )
-        # self.norm = norm_layer(inner_chan)
-        self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
+        # local enhance vss block
+        if window_size is not None:
+            self.mamba_inner_shared = VSSBlock(
+                inner_chan,
+                d_state=d_state,
+                drop_path=drop_path,
+                mlp_ratio=1,
+                norm_layer=norm_layer,
+                mlp_drop_rate=0.0,
+                ssm_conv=ssm_conv,
+                ssm_dt_rank=dt_rank,
+                ssm_ratio=1,
+                ssm_init='v0',
+                forward_type=forward_type,
+                use_checkpoint=use_ckpt,
+                **mamba_kwargs,
+            )
+            # self.norm = norm_layer(inner_chan)
+            self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
+        else:
+            warn('window size is bigger than img size, cancel the local enhanced vss block')
 
         # v1: add attn
         # self.adaptive_pool_size = (3, 3)
@@ -681,27 +690,34 @@ class MambaInjectionBlock(nn.Module):
         # x = self.intro_conv(x)
         # x_in = x
 
-        # v3: mamba in mamba
-        if self.local_shift_size > 0:
-            x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))
+        # local enhanced vss block
+        if self.window_size is not None:
+            # v3: mamba in mamba
+            if self.local_shift_size > 0:
+                x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))
+            
+            xs_local, n_win = window_partition(x, self.window_size)
+            xs_local = self.mamba_inner_shared(xs_local)
+            if c_shuffle:
+                _xs_local_shape = xs_local.shape
+                xs_local = xs_local.view(b, n_win, *_xs_local_shape[1:])
+                c_perm = torch.randperm(n_win)
+                xs_local = xs_local[:, c_perm]
+                xs_local = xs_local.view(-1, *_xs_local_shape[1:])
+            xs_local = window_reverse(xs_local, self.window_size, h, w)
         
-        xs_local = window_partition(x, self.window_size)
-        xs_local = self.mamba_inner_shared(xs_local)
-        x_local = window_reverse(xs_local, self.window_size, h, w)
+            if self.local_shift_size > 0:
+                xs_local = torch.roll(xs_local, shifts=(self.local_shift_size, self.local_shift_size), dims=(1, 2))
         
-        if self.local_shift_size > 0:
-            x_local = torch.roll(x_local, shifts=(self.local_shift_size, self.local_shift_size), dims=(1, 2))
-        
-        if c_shuffle:
-            c_perm = torch.randperm(c)
-            x_local = x_local[:, :, :, c_perm]
+            xs_local = xs_local * self.enhanced_factor
+            x = x + xs_local
         
         # x_local = self.inner_norm(x_local)
 
         # enhance v1
         # x = self.mamba(self.inner_to_outter_conv(torch.cat([x_local, x], dim=-1)))
         # enhance v2
-        x = self.mamba(x_local * self.enhanced_factor + x)
+        x = self.mamba(x)
         
         # if c_shuffle:
         #     c_perm = torch.argsort(c_perm)
@@ -945,7 +961,8 @@ class ConditionalNAFNet(BaseModel):
         enc_blk_nums=[],
         dec_blk_nums=[],
         ssm_convs=[],
-        upscale=1,
+        window_sizes=[],
+        upscale=4,
         if_abs_pos=True,
         if_rope=False,
         pt_img_size=64,
@@ -1007,6 +1024,7 @@ class ConditionalNAFNet(BaseModel):
         n_prev_blks = 0
         # encoder
         for enc_i, num in enumerate(enc_blk_nums):
+            win_s = window_sizes[enc_i]
             self.encoders.append(
                 Sequential(
                     *[
@@ -1015,12 +1033,13 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
+                            window_size= win_s if pt_img_size % win_s == 0 else None
                         )
                         for i in range(num)
                     ]
                 )
             )
-            self.downs.append(down(chan, down_type='patch_merge'))
+            self.downs.append(down(chan, down_type='conv'))
             chan = chan * 2
             n_prev_blks += num
             pt_img_size //= 2
@@ -1033,6 +1052,7 @@ class ConditionalNAFNet(BaseModel):
                     chan,
                     ssm_conv=ssm_convs[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
+                    window_size= win_s if pt_img_size % win_s == 0 else None
                 )
                 for i in range(num)
             ]
@@ -1041,6 +1061,7 @@ class ConditionalNAFNet(BaseModel):
 
         # decoder
         ssm_convs = list(reversed(ssm_convs))
+        window_sizes = list(reversed(window_sizes))
         for dec_i, num in enumerate(reversed(dec_blk_nums), enc_i):
             self.ups.append(up(chan))
             chan = chan // 2
@@ -1055,6 +1076,7 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[dec_i - enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
+                            window_size= win_s if pt_img_size % win_s == 0 else None
                         )
                         for i in range(num)
                     ],
@@ -1131,9 +1153,11 @@ class ConditionalNAFNet(BaseModel):
             x = encoder.enc_forward(x, cond, c_shuffle)
             encs.append(x)
             x = down(x)
+            # print(x.shape)
 
         # x = self.middle_rope(x)
         x = self.middle_blks.enc_forward(x, cond, c_shuffle)
+        # print(x.shape)
 
         for decoder, up, enc_skip in zip(self.decoders, self.ups, encs[::-1]):
             x = up(x)
@@ -1170,7 +1194,7 @@ class ConditionalNAFNet(BaseModel):
 
         return sr
 
-    def train_step(self, ms, lms, pan, gt, criterion, c_shuffle=False):
+    def train_step(self, ms, lms, pan, gt, criterion, c_shuffle=True):
         sr = self._forward_implem(lms, pan, c_shuffle) + lms
         loss = criterion(sr, gt)
 
@@ -1191,16 +1215,17 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
-    device = torch.device("cuda:0")
+    device='cuda:0'
     net = ConditionalNAFNet(
         img_channel=8,
         condition_channel=1,
         out_channel=8,
         width=32,
-        middle_blk_num=2,
-        enc_blk_nums=[2, 2, 2],
-        dec_blk_nums=[2, 2, 2],
-        ssm_convs=[11,11,11],
+        middle_blk_num=8,
+        enc_blk_nums=[2, 6, 8,],
+        dec_blk_nums=[2, 6, 8,],
+        ssm_convs=[11, 9, 7],
+        window_sizes=[8,8,8],
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
@@ -1209,21 +1234,23 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    img_size = 32
-    scale = 8
+    img_size = 16
+    scale = 4
     chan = 8
     pan_chan = 1
     ms = torch.randn(1, chan, img_size, img_size).to(device)
-    img = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
-    cond = torch.randn(1, pan_chan, img_size * scale, img_size * scale).to(device)
+    lms = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
+    pan = torch.randn(1, pan_chan, img_size * scale, img_size * scale).to(device)
     gt = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
 
     # net = torch.compile(net)
 
-    out = net._forward_implem(img, cond)
+    out = net._forward_implem(lms, pan, True)
+    print(out.shape)
     loss = F.mse_loss(out, gt)
     loss.backward()
     print(loss)
+    
     # find unused params
     # for n, p in net.named_parameters():
     #     if p.grad is None:
@@ -1234,12 +1261,12 @@ if __name__ == "__main__":
     # print(out.shape)
 
     # test patch merge
-    # sr = net.val_step(ms, img, cond)
+    # sr = net.val_step(ms, lms, pan)
     # print(sr.shape)
 
     # print(torch.cuda.memory_summary(device=device))
 
-    from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    net.forward = net._forward_once
-    print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    # net.forward = net._forward_implem
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))

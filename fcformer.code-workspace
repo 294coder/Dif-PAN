@@ -12,6 +12,8 @@
 	],
 	"settings": {
 		"files.autoSave": "afterDelay",
-		"editor.cursorSmoothCaretAnimation": "on"
+		"editor.cursorSmoothCaretAnimation": "on",
+		"liveServer.settings.multiRootWorkspaceName": "panformer",
+		"matlab-interactive-terminal.pythonPath": "/home/office-401/.conda/envs/zihan/bin/python"
 	}
 }
