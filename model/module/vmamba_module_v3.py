@@ -1217,6 +1217,7 @@ class VSSBlock(nn.Module):
         else:
             return self._forward(input, ssm_state)
 
+# ======================================================================
 
 class VSSM(nn.Module):
     def __init__(

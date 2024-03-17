@@ -1,6 +1,6 @@
 optimizer:
   name: "adamw"
-  lr: !!float 1e-4
+  lr: !!float 6e-4
   weight_decay: !!float 1e-3
 
 lr_scheduler:
@@ -22,7 +22,7 @@ lr_scheduler:
   # threshold_mode: "rel"
 
   name: "multi_step"
-  milestones: [100, 1000] #[100, 800]
+  milestones: [100, 800, 1600] #[100, 800]
   gamma: 0.2
 
 max_norm: 0.03
@@ -43,20 +43,20 @@ path:
   #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
   cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 
-  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
+  cave_x8_train_path: "/Data3/cao/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgsb.h5"
   #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
-  cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+  cave_x8_val_path: "/Data3/cao/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 
   harvard_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5"
-  harvard_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+  harvard_x4_val_path: "/Data3/cao/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
 
-  harvard_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
-  harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+  harvard_x8_train_path: "/Data3/cao/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
+  harvard_x8_val_path: "/Data3/cao/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
 network_configs:
-  img_channel: 31
-  condition_channel: 3
-  out_channel: 31
+  img_channel: 4
+  condition_channel: 1
+  out_channel: 4
   # nano config
   # width: 8
   # middle_blk_num: 1
@@ -79,13 +79,14 @@ network_configs:
   enc_blk_nums: [2,2,2]
   dec_blk_nums: [2,2,2]
   ssm_convs: [11, 11, 11]
+  window_sizes: [8, 8, 8]
   drop_path_rate: 0.2
 
   if_abs_pos: no # buggy: convergence is slow
   if_rope: no
   use_prev_ssm_state: yes
   patch_merge: yes
-  upscale: 8
+  upscale: 4
 
 logger_config:
   base_path: ./log_file/

@@ -2,7 +2,6 @@
 /__pycache__/
 /*/__pycache__/
 /*/*/__pycache__/
-/__pycache__/
 /*.zip
 /.idea
 /.cache/
@@ -10,9 +9,6 @@
 /*/*/*/*.so
 /*/*/*/*.o
 /*/*/*/*.ninja
-/*/*/*/*/*.pyc
-/.cache
-
 
 
 
@@ -51,7 +47,4 @@ nohup.o/.history/
 /saliency/
 /runs/
 /Matlab-Test-Package/
-_test.py
 test.py
-nohup.out
-panformer.code-workspace

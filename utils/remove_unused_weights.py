@@ -4,7 +4,7 @@ import re
 import os
 
 # cwd
-os.chdir('/home/ZiHanCao/exps/panformer')
+os.chdir('/Data3/cao/ZiHanCao/exps/panformer')
 print(os.getcwd())
 
 inf_text = open('inference.py', 'r').readlines()

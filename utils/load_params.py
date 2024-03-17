@@ -7,7 +7,18 @@ from torch_ema import ExponentialMovingAverage
 def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_model.shadow_params'):
     model = model.to(device if ddp_rank is None else ddp_rank)
     place = device if ddp_rank is None else {'cuda:%d' % 0: 'cuda:%d' % ddp_rank}
-    params = torch.load(path, map_location=place)
+    
+    try:
+        params = torch.load(path, map_location=place)
+    except Exception:
+        print('did not find the pth file, try to find in used_weights/ and ununsed_weights/...')
+        try:
+            path_used = path.replace('weight/', 'weight/used_weights/')
+            params = torch.load(path_used, map_location=place)
+        except Exception:
+            path_ununsed = path.replace('weight/', 'weight/unused_weights/')
+            params = torch.load(path_ununsed, map_location=place)
+        
     
     # parse key
     parsed_keys = spec_key.split('.')

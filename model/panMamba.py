@@ -561,11 +561,10 @@ def window_partition(x, window_size):
     """
     B, H, W, C = x.shape
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
-    n_windows = (H // window_size) * (W // window_size)
     windows = (
         x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
     )
-    return windows, n_windows
+    return windows
 
 
 def window_reverse(windows, window_size, H, W):
@@ -1036,7 +1035,8 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state if i != 0 else False
+                            prev_state_gate=use_prev_ssm_state if i != 0 else False,
+                            window_size=win_s,
                         )
                         for i in range(num)
                     ]
@@ -1055,7 +1055,8 @@ class ConditionalNAFNet(BaseModel):
                     chan,
                     ssm_conv=ssm_convs[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
-                    prev_state_gate=use_prev_ssm_state if i != 0 else False
+                    prev_state_gate=use_prev_ssm_state if i != 0 else False,
+                    win_s = window_sizes[-1],
                 )
                 for i in range(num)
             ]
@@ -1069,7 +1070,7 @@ class ConditionalNAFNet(BaseModel):
             self.ups.append(up(chan))
             chan = chan // 2
             pt_img_size *= 2
-
+            win_s = window_sizes[dec_i - enc_i]
             self.decoders.append(
                 Sequential(
                     nn.Linear(chan * 2, chan),
@@ -1079,7 +1080,8 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[dec_i - enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state
+                            prev_state_gate=use_prev_ssm_state,
+                            window_size=win_s,
                         )
                         for i in range(num)
                     ],
@@ -1219,8 +1221,9 @@ class ConditionalNAFNet(BaseModel):
 
 if __name__ == "__main__":
     from torch.cuda import memory_summary
-
-    device = torch.device("cuda:1")
+    
+    device = "cuda:1"
+    torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
     # + using prev_ssm_state: 8.651M
@@ -1233,6 +1236,7 @@ if __name__ == "__main__":
         enc_blk_nums=[1, 1, 1],
         dec_blk_nums=[1, 1, 1],
         ssm_convs=[3, 3, 3],
+        window_sizes=[8, 8, 8],
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
