@@ -1,13 +1,13 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": "../"
 		},
 		{
-			"path": "../../datasets"
+			"path": "../../../datasets"
 		},
 		{
-			"path": "../VMamba"
+			"path": "../../VMamba"
 		}
 	],
 	"settings": {

@@ -593,7 +593,7 @@ class MambaInjectionBlock(nn.Module):
         mlp_drop=0.0,
         norm_layer=partial(nn.LayerNorm, eps=1e-6),
         window_size=8,
-        d_state=12,
+        d_state=32,
         dt_rank="auto",
         ssm_conv=7,
         ssm_ratio=2,
@@ -1063,8 +1063,8 @@ class ConditionalNAFNet(BaseModel):
                             condition_channel,
                             chan,
                             ssm_conv=ssm_convs[enc_i],
-                            drop_path=inter_dpr[n_prev_blks + i],
                             window_size=window_sizes[enc_i],
+                            drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_gate=use_prev_ssm_state if i != 0 else False
                         )
                         for i in range(num)
@@ -1083,6 +1083,7 @@ class ConditionalNAFNet(BaseModel):
                     condition_channel,
                     chan,
                     ssm_conv=ssm_convs[-1],
+                    window_size=window_sizes[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
                     prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
@@ -1290,11 +1291,11 @@ if __name__ == "__main__":
         naf_dec_blk_nums=[2],
         naf_chan_upscale=[2],
         
-        ssm_enc_blk_nums=[2]*2,
-        ssm_dec_blk_nums=[2]*2,
-        ssm_chan_upscale=[2]*2,
-        window_sizes=[8]*2,
-        ssm_convs=[7]*2,
+        ssm_enc_blk_nums=[2]*3,
+        ssm_dec_blk_nums=[2]*3,
+        ssm_chan_upscale=[2]*3,
+        window_sizes=[4,2,2],
+        ssm_convs=[7,5,3],
         
         pt_img_size=64,
         if_rope=False,
@@ -1302,40 +1303,58 @@ if __name__ == "__main__":
         patch_merge=True,
         use_prev_ssm_state=True
     ).to(device)
+    
+    from model.module.vmamba_module_v3 import selective_scan_flop_jit
+    supported_ops={
+            "aten::silu": None, # as relu is in _IGNORED_OPS
+            "aten::neg": None, # as relu is in _IGNORED_OPS
+            "aten::exp": None, # as relu is in _IGNORED_OPS
+            "aten::flip": None, # as permute is in _IGNORED_OPS
+            # "prim::PythonOp.CrossScan": None,
+            # "prim::PythonOp.CrossMerge": None,
+            "prim::PythonOp.SelectiveScanMamba": selective_scan_flop_jit,
+            "prim::PythonOp.SelectiveScanOflex": selective_scan_flop_jit,
+            "prim::PythonOp.SelectiveScanCore": selective_scan_flop_jit,
+            "prim::PythonOp.SelectiveScanNRow": selective_scan_flop_jit,
+        }
 
     # net = MambaBlock(4).to(device)
 
-    scale = 4
-    img_size = 64 // scale
-    chan = 8
-    pan_chan = 1
-    ms = torch.randn(1, chan, img_size, img_size).to(device)
-    img = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
-    cond = torch.randn(1, pan_chan, img_size * scale, img_size * scale).to(device)
-    gt = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
+    net.eval()
+    for img_sz in [64, 128, 256, 512]:
+        scale = 4
+        img_size = 64 // scale
+        chan = 8
+        pan_chan = 1
+        ms = torch.randn(1, chan, img_size, img_size).to(device)
+        img = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
+        cond = torch.randn(1, pan_chan, img_size * scale, img_size * scale).to(device)
+        gt = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
 
-    # net = torch.compile(net)
+        # net = torch.compile(net)
 
-    out = net._forward_implem(img, cond)
-    loss = F.mse_loss(out, gt)
-    loss.backward()
-    print(loss)
-    # find unused params
-    for n, p in net.named_parameters():
-        if p.grad is None:
-            print(n, "has no grad")
+        out = net._forward_implem(img, cond)
+        # loss = F.mse_loss(out, gt)
+        # loss.backward()
+        # print(loss)
+        # # find unused params
+        # for n, p in net.named_parameters():
+        #     if p.grad is None:
+        #         print(n, "has no grad")
 
-    # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
+        # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
 
-    # print(out.shape)
+        # print(out.shape)
 
-    # test patch merge
-    # sr = net.val_step(ms, img, cond)
-    # print(sr.shape)
+        # test patch merge
+        # sr = net.val_step(ms, img, cond)
+        # print(sr.shape)
 
-    # print(torch.cuda.memory_summary(device=device))
+        # print(torch.cuda.memory_summary(device=device))
 
-    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-    # net.forward = net._forward_implem
-    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+        net.forward = net._forward_implem
+        flops = FlopCountAnalysis(net, (img, cond))
+        flops.set_op_handle(**supported_ops)
+        print(flop_count_table(flops))
