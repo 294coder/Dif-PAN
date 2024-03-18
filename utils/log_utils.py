@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import wandb
 from aim import Distribution, Image, Repo, Run, Session, Text
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from torch import NoneType, nn
 from torchvision.utils import make_grid
 
