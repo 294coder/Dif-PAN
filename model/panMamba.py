@@ -728,7 +728,7 @@ class MambaInjectionBlock(nn.Module):
         return x, local_ssm_states, global_ssm_state
 
 
-class Sequential(nn.Module):
+class UniSequential(nn.Module):
     def __init__(self, *args):
         super().__init__()
         self.mods = nn.ModuleList(args)
@@ -736,7 +736,20 @@ class Sequential(nn.Module):
     def __getitem__(self, idx):
         return self.mods[idx]
     
-    def enc_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
+    def NAF_enc_forward(self, feat, cond):
+        outp = feat
+        for mod in self.mods:
+            outp = mod(outp, cond)
+        return outp
+        
+    def NAF_dec_forward(self, feat, cond):
+        outp = feat
+        outp = self.mods[0](outp)
+        for mod in self.mods[1:]:
+            outp = mod(outp, cond)
+        return outp
+        
+    def LEMM_enc_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
         outp = feat
         local_state, global_state = states[0], states[1]
         for mod in self.mods:
@@ -744,7 +757,7 @@ class Sequential(nn.Module):
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
 
-    def dec_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
+    def LEMM_dec_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
         outp = feat
         local_state, global_state = states[0], states[1]
         outp = self.mods[0](outp)
@@ -777,16 +790,14 @@ class SimpleGate(nn.Module):
 
 class NAFBlock(nn.Module):
     def __init__(
-        self, c, time_emb_dim=None, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.0
+        self, c, cond_c, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.0
     ):
         super().__init__()
-        self.mlp = (
-            nn.Sequential(SimpleGate(), nn.Linear(time_emb_dim // 2, c * 4))
-            if time_emb_dim
-            else None
-        )
 
         dw_channel = c * DW_Expand
+        
+        self.cond_intro_conv = nn.Conv2d(cond_c, c, 1)
+        
         self.conv1 = nn.Conv2d(
             in_channels=c,
             out_channels=dw_channel,
@@ -870,14 +881,14 @@ class NAFBlock(nn.Module):
         time_emb = rearrange(time_emb, "b c -> b c 1 1")
         return time_emb.chunk(4, dim=1)
 
-    def forward(self, x):
-        inp, time = x
-        shift_att, scale_att, shift_ffn, scale_ffn = self.time_forward(time, self.mlp)
-
-        x = inp
+    def forward(self, x, cond):
+        cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=True)
+        cond = self.cond_intro_conv(cond)
+        x = x + cond
+        
+        inp = x
 
         x = self.norm1(x)
-        x = x * (scale_att + 1) + shift_att
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.sg(x)
@@ -889,7 +900,6 @@ class NAFBlock(nn.Module):
         y = inp + x * self.beta
 
         x = self.norm2(y)
-        x = x * (scale_ffn + 1) + shift_ffn
         x = self.conv4(x)
         x = self.sg(x)
         x = self.conv5(x)
@@ -898,7 +908,7 @@ class NAFBlock(nn.Module):
 
         x = y + x * self.gamma
 
-        return x, time
+        return x
 
 
 class Permute(nn.Module):
@@ -917,14 +927,14 @@ class Permute(nn.Module):
             raise NotImplementedError
 
 
-def down(chan, down_type='patch_merge'):
+def down(chan, down_type='patch_merge', permute=False, r=2):
     if down_type == 'conv':
         return nn.Sequential(
             # Rearrange('b h w c -> b c h w', h=h, w=w),
-            Permute("c_first"),
-            nn.Conv2d(chan, 2 * chan, 2, 2),
+            Permute("c_first") if permute else nn.Identity(),
+            nn.Conv2d(chan, 2 * chan, r, r),
             # Rearrange('b c h w -> b h w c'),
-            Permute("c_last"),
+            Permute("c_last") if permute else nn.Identity(),
         )
     elif down_type == 'patch_merge':
         return PatchMerging2D(chan, chan*2)
@@ -932,17 +942,17 @@ def down(chan, down_type='patch_merge'):
         raise NotImplementedError(f'down type {down_type} not implemented')
 
 
-def up(chan):
+def up(chan, permute=False):
     return nn.Sequential(
         # Rearrange('b h w c -> b c h w', h=h, w=w),
-        Permute("c_first"),
+        Permute("c_first") if permute else nn.Identity(),
         # ver 1: use pixelshuffle
         # ver 2: directly upsample and half the channels
         nn.Conv2d(chan, chan // 2, 1, bias=False),
         # nn.PixelShuffle(2),
         nn.Upsample(scale_factor=2, mode="bilinear"),
         # Rearrange('b c h w -> b h w c'),
-        Permute("c_last"),
+        Permute("c_last") if permute else nn.Identity(),
     )
 
 
@@ -954,17 +964,24 @@ class ConditionalNAFNet(BaseModel):
         condition_channel=3,
         out_channel=3,
         width=16,
-        middle_blk_num=1,
-        enc_blk_nums=[],
-        dec_blk_nums=[],
+        # NAFBlock settings
+        naf_enc_blk_nums=[],
+        naf_dec_blk_nums=[],
+        naf_chan_upscale=[],
+        # LEMMBlock settings
+        ssm_enc_blk_nums=[],
+        middle_blk_nums=2,
+        ssm_dec_blk_nums=[],
         ssm_convs=[],
+        ssm_chan_upscale=[],
+        use_prev_ssm_state=True,
+        # model settings
         upscale=1,
         if_abs_pos=True,
         if_rope=False,
         pt_img_size=64,
         drop_path_rate=0.1,
         patch_merge=True,
-        use_prev_ssm_state=False,
     ):
         super().__init__()
         self.upscale = upscale
@@ -973,14 +990,10 @@ class ConditionalNAFNet(BaseModel):
         self.pt_img_size = pt_img_size
 
         if if_abs_pos:
-            self.abs_pos = nn.Parameter(
-                torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True
-            )
+            self.abs_pos = nn.Parameter(torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True)
 
         if if_rope:
-            self.rope = VisionRotaryEmbeddingFast(
-                chan, pt_seq_len=pt_img_size, ft_seq_len=None
-            )
+            self.rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
 
         self.intro = nn.Sequential(
             nn.Conv2d(
@@ -991,7 +1004,7 @@ class ConditionalNAFNet(BaseModel):
                 groups=1,
                 bias=False,
             ),
-            Rearrange("b c h w -> b h w c"),
+            # Rearrange("b c h w -> b h w c"),
         )
 
         self.ending = nn.Conv2d(
@@ -1005,24 +1018,42 @@ class ConditionalNAFNet(BaseModel):
         )
 
         ## main body
-        self.encoders = nn.ModuleList()
-        self.decoders = nn.ModuleList()
+        self.naf_encoders = nn.ModuleList()
+        self.naf_decoders = nn.ModuleList()
+        self.lemm_encoders = nn.ModuleList()
+        self.lemm_decoders = nn.ModuleList()
         self.middle_blks = nn.ModuleList()
-        self.ups = nn.ModuleList()
-        self.downs = nn.ModuleList()
+        self.naf_ups = nn.ModuleList()
+        self.naf_downs = nn.ModuleList()
+        self.lemm_ups = nn.ModuleList()
+        self.lemm_downs = nn.ModuleList()
+        
 
-        depth = sum(enc_blk_nums) + middle_blk_num + sum(dec_blk_nums)
-        dpr = [
-            x.item() for x in torch.linspace(0, drop_path_rate, depth)
-        ]  # stochastic depth decay rule
+        depth = sum(naf_enc_blk_nums) + sum(naf_dec_blk_nums) + middle_blk_nums + sum(ssm_enc_blk_nums) + sum(ssm_dec_blk_nums)
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         inter_dpr = dpr
 
         chan = width
         n_prev_blks = 0
-        # encoder
-        for enc_i, num in enumerate(enc_blk_nums):
+        
+        ## encoder
+        # NAF layer
+        for enc_i, num in enumerate(naf_enc_blk_nums):
+            self.naf_encoders.append(
+                UniSequential(
+                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
+                      for i in range(num)]
+                )
+            )
+            self.downs.append(down(chan, down_type='conv'))
+            chan = chan * naf_chan_upscale[enc_i]
+            n_prev_blks += num
+            pt_img_size //= 2
+            
+        # LEMM layer
+        for enc_i, num in enumerate(ssm_enc_blk_nums):
             self.encoders.append(
-                Sequential(
+                UniSequential(
                     *[
                         MambaInjectionBlock(
                             condition_channel,
@@ -1035,13 +1066,13 @@ class ConditionalNAFNet(BaseModel):
                     ]
                 )
             )
-            self.downs.append(down(chan, down_type='conv'))
-            chan = chan * 2
+            self.downs.append(down(chan, down_type='conv', permute=True))
+            chan = chan * ssm_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
 
-        # middle layer
-        self.middle_blks = Sequential(
+        ## middel layer
+        self.middle_blks = UniSequential(
             *[
                 MambaInjectionBlock(
                     condition_channel,
@@ -1053,17 +1084,32 @@ class ConditionalNAFNet(BaseModel):
                 for i in range(num)
             ]
         )
-        n_prev_blks += middle_blk_num
+        n_prev_blks += middle_blk_nums
 
-        # decoder
-        ssm_convs = list(reversed(ssm_convs))
-        for dec_i, num in enumerate(reversed(dec_blk_nums), enc_i):
+        ## decoder
+        # NAF layer
+        for dec_i, num in enumerate(naf_dec_blk_nums):
             self.ups.append(up(chan))
+            chan = chan // self.naf_chan_upscale[::-1][dec_i]
+            pt_img_size *= 2
+            self.naf_encoders.append(
+                UniSequential(
+                    nn.Conv2d(chan*2, chan, 1),
+                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
+                      for i in range(num)]
+                )
+            )
+            n_prev_blks += num
+        
+        # LEMM layer
+        ssm_convs = list(reversed(ssm_convs))
+        for dec_i, num in enumerate(reversed(ssm_dec_blk_nums), enc_i):
+            self.ups.append(up(chan, permute=True))
             chan = chan // 2
             pt_img_size *= 2
 
             self.decoders.append(
-                Sequential(
+                UniSequential(
                     nn.Linear(chan * 2, chan),
                     *[
                         MambaInjectionBlock(
@@ -1140,30 +1186,42 @@ class ConditionalNAFNet(BaseModel):
             x = x + self.abs_pos
 
         # x = self.square_relu(x)
+        
+        naf_encs = []
+        for encoder, down in zip(self.naf_encoders, self.naf_downs):
+            x = encoder.naf_enc_forward(x, cond)
+            naf_encs.append(x)
+            x = down(x)
 
-        encs = []
+        lemm_encs = []
         encs_states = []
         states = [None, None]
-        for encoder, down in zip(self.encoders, self.downs):
+        x = rearrange(x, 'b c h w -> b h w c')
+        for encoder, down in zip(self.lemm_encoders, self.lemm_downs):
             # x = rope(x)
             x, states = encoder.enc_forward(x, cond, c_shuffle)
-            encs.append(x)
+            lemm_encs.append(x)
             encs_states.append(states)
             x = down(x)
 
         # x = self.middle_rope(x)
         x, states = self.middle_blks.enc_forward(x, cond, c_shuffle)
 
-        for decoder, up, enc_skip, enc_state_skip in zip(self.decoders, self.ups, encs[::-1], encs_states[::-1]):
+        for decoder, up, enc_skip, enc_state_skip in zip(self.decoders, self.ups, lemm_encs[::-1], encs_states[::-1]):
             x = up(x)
             x = torch.cat([x, enc_skip], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
             x, states = decoder.dec_forward(x, cond, c_shuffle, enc_state_skip)
+            
+        x = rearrange(x, 'b h w c -> b c h w')
+        for encoder, down, enc_skip in zip(self.naf_encoders, self.naf_downs, naf_encs[::-1]):
+            x = up(x)
+            x = torch.cat([x, enc_skip], dim=1)
+            x = encoder.naf_dec_forward(x, cond)
 
-        x = rearrange(x, "b h w c -> b c h w", h=H, w=W)
         x = self.ending(x)
 
-        x = x[..., :H, :W]
+        # x = x[..., :H, :W]
 
         return x
 
