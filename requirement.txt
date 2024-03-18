@@ -16,3 +16,13 @@ bytecode
 timm
 mmcv-full
 h5py
+torchsummary
+fvcore
+
+
+
+
+
+
+
+

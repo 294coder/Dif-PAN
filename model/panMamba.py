@@ -1211,7 +1211,8 @@ class ConditionalNAFNet(BaseModel):
 if __name__ == "__main__":
     from torch.cuda import memory_summary
 
-    device = torch.device("cuda:1")
+    device = "cuda:0"
+    torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
     # + using prev_ssm_state: 8.651M
