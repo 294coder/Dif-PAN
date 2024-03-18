@@ -925,14 +925,17 @@ class Permute(nn.Module):
             return x.permute(0, 2, 3, 1)
         else:
             raise NotImplementedError
+        
+    def __repr__(self):
+        return f"Permute(mode={self.mode})"
 
 
-def down(chan, down_type='patch_merge', permute=False, r=2):
+def down(chan, down_type='patch_merge', permute=False, r=2, chan_r=2):
     if down_type == 'conv':
         return nn.Sequential(
             # Rearrange('b h w c -> b c h w', h=h, w=w),
             Permute("c_first") if permute else nn.Identity(),
-            nn.Conv2d(chan, 2 * chan, r, r),
+            nn.Conv2d(chan, chan * chan_r, r, r),
             # Rearrange('b c h w -> b h w c'),
             Permute("c_last") if permute else nn.Identity(),
         )
@@ -942,15 +945,15 @@ def down(chan, down_type='patch_merge', permute=False, r=2):
         raise NotImplementedError(f'down type {down_type} not implemented')
 
 
-def up(chan, permute=False):
+def up(chan, permute=False, r=2, chan_r=2,):
     return nn.Sequential(
         # Rearrange('b h w c -> b c h w', h=h, w=w),
         Permute("c_first") if permute else nn.Identity(),
         # ver 1: use pixelshuffle
         # ver 2: directly upsample and half the channels
-        nn.Conv2d(chan, chan // 2, 1, bias=False),
+        nn.Conv2d(chan, chan // chan_r, 1, bias=False),
         # nn.PixelShuffle(2),
-        nn.Upsample(scale_factor=2, mode="bilinear"),
+        nn.Upsample(scale_factor=r, mode="bilinear"),
         # Rearrange('b c h w -> b h w c'),
         Permute("c_last") if permute else nn.Identity(),
     )
@@ -975,6 +978,7 @@ class ConditionalNAFNet(BaseModel):
         ssm_convs=[],
         ssm_chan_upscale=[],
         use_prev_ssm_state=True,
+        window_sizes=[],
         # model settings
         upscale=1,
         if_abs_pos=True,
@@ -1045,14 +1049,14 @@ class ConditionalNAFNet(BaseModel):
                       for i in range(num)]
                 )
             )
-            self.downs.append(down(chan, down_type='conv'))
+            self.naf_downs.append(down(chan, down_type='conv'))
             chan = chan * naf_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
             
         # LEMM layer
         for enc_i, num in enumerate(ssm_enc_blk_nums):
-            self.encoders.append(
+            self.lemm_encoders.append(
                 UniSequential(
                     *[
                         MambaInjectionBlock(
@@ -1060,13 +1064,14 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
+                            window_size=window_sizes[enc_i],
                             prev_state_gate=use_prev_ssm_state if i != 0 else False
                         )
                         for i in range(num)
                     ]
                 )
             )
-            self.downs.append(down(chan, down_type='conv', permute=True))
+            self.lemm_downs.append(down(chan, down_type='conv', permute=True))
             chan = chan * ssm_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
@@ -1087,35 +1092,22 @@ class ConditionalNAFNet(BaseModel):
         n_prev_blks += middle_blk_nums
 
         ## decoder
-        # NAF layer
-        for dec_i, num in enumerate(naf_dec_blk_nums):
-            self.ups.append(up(chan))
-            chan = chan // self.naf_chan_upscale[::-1][dec_i]
-            pt_img_size *= 2
-            self.naf_encoders.append(
-                UniSequential(
-                    nn.Conv2d(chan*2, chan, 1),
-                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
-                      for i in range(num)]
-                )
-            )
-            n_prev_blks += num
-        
         # LEMM layer
         ssm_convs = list(reversed(ssm_convs))
-        for dec_i, num in enumerate(reversed(ssm_dec_blk_nums), enc_i):
-            self.ups.append(up(chan, permute=True))
-            chan = chan // 2
+        for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
+            self.lemm_ups.append(up(chan, permute=True))
+            chan = chan // ssm_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
 
-            self.decoders.append(
+            self.lemm_decoders.append(
                 UniSequential(
                     nn.Linear(chan * 2, chan),
                     *[
                         MambaInjectionBlock(
                             condition_channel,
                             chan,
-                            ssm_conv=ssm_convs[dec_i - enc_i],
+                            ssm_conv=ssm_convs[dec_i],
+                            window_size=window_sizes[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_gate=use_prev_ssm_state
                         )
@@ -1124,8 +1116,20 @@ class ConditionalNAFNet(BaseModel):
                 )
             )
             n_prev_blks += num
-
-        self.padder_size = 2 ** len(self.encoders)
+            
+        # NAF layer
+        for dec_i, num in enumerate(naf_dec_blk_nums):
+            self.naf_ups.append(up(chan))
+            chan = chan // naf_chan_upscale[::-1][dec_i]
+            pt_img_size *= 2
+            self.naf_decoders.append(
+                UniSequential(
+                    nn.Conv2d(chan*2, chan, 1),
+                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
+                      for i in range(num)]
+                )
+            )
+            n_prev_blks += num
 
         # for patch merging if the image is too large
         self.patch_merge = patch_merge
@@ -1189,7 +1193,7 @@ class ConditionalNAFNet(BaseModel):
         
         naf_encs = []
         for encoder, down in zip(self.naf_encoders, self.naf_downs):
-            x = encoder.naf_enc_forward(x, cond)
+            x = encoder.NAF_enc_forward(x, cond)
             naf_encs.append(x)
             x = down(x)
 
@@ -1199,25 +1203,25 @@ class ConditionalNAFNet(BaseModel):
         x = rearrange(x, 'b c h w -> b h w c')
         for encoder, down in zip(self.lemm_encoders, self.lemm_downs):
             # x = rope(x)
-            x, states = encoder.enc_forward(x, cond, c_shuffle)
+            x, states = encoder.LEMM_enc_forward(x, cond, c_shuffle)
             lemm_encs.append(x)
             encs_states.append(states)
             x = down(x)
 
         # x = self.middle_rope(x)
-        x, states = self.middle_blks.enc_forward(x, cond, c_shuffle)
+        x, states = self.middle_blks.LEMM_enc_forward(x, cond, c_shuffle)
 
-        for decoder, up, enc_skip, enc_state_skip in zip(self.decoders, self.ups, lemm_encs[::-1], encs_states[::-1]):
+        for decoder, up, enc_skip, enc_state_skip in zip(self.lemm_decoders, self.lemm_ups, lemm_encs[::-1], encs_states[::-1]):
             x = up(x)
             x = torch.cat([x, enc_skip], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
-            x, states = decoder.dec_forward(x, cond, c_shuffle, enc_state_skip)
+            x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, enc_state_skip)
             
         x = rearrange(x, 'b h w c -> b c h w')
-        for encoder, down, enc_skip in zip(self.naf_encoders, self.naf_downs, naf_encs[::-1]):
+        for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
             x = up(x)
             x = torch.cat([x, enc_skip], dim=1)
-            x = encoder.naf_dec_forward(x, cond)
+            x = decoder.NAF_dec_forward(x, cond)
 
         x = self.ending(x)
 
@@ -1258,16 +1262,17 @@ class ConditionalNAFNet(BaseModel):
         sr = self._forward_implem(lms, pan, **kwargs)  # sr[:,[29,19,9]]
         return sr
 
-    def check_image_size(self, x):
-        _, _, h, w = x.size()
-        mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
-        mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
-        return x
+    # def check_image_size(self, x):
+    #     _, _, h, w = x.size()
+    #     mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
+    #     mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
+    #     x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
+    #     return x
 
 
 if __name__ == "__main__":
     from torch.cuda import memory_summary
+    import colored_traceback.always
 
     device = "cuda:0"
     torch.cuda.set_device(device)
@@ -1279,10 +1284,18 @@ if __name__ == "__main__":
         condition_channel=1,
         out_channel=8,
         width=8,
-        middle_blk_num=2,
-        enc_blk_nums=[2]*3,
-        dec_blk_nums=[2]*3,
-        ssm_convs=[3, 3, 3],
+        middle_blk_nums=2,
+        
+        naf_enc_blk_nums=[2],
+        naf_dec_blk_nums=[2],
+        naf_chan_upscale=[2],
+        
+        ssm_enc_blk_nums=[2]*2,
+        ssm_dec_blk_nums=[2]*2,
+        ssm_chan_upscale=[2]*2,
+        window_sizes=[8]*2,
+        ssm_convs=[7]*2,
+        
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
@@ -1292,8 +1305,8 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    img_size = 16
-    scale = 8
+    scale = 4
+    img_size = 64 // scale
     chan = 8
     pan_chan = 1
     ms = torch.randn(1, chan, img_size, img_size).to(device)

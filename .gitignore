@@ -15,12 +15,9 @@
 /orch/
 
 
-
-
 /.history/
 /.idea/
 /.ipynb_checkpoints/
-/.vscode/
 /DLPan-Toolbox/
 /log_file/
 /loss_landscape/
