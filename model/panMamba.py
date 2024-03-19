@@ -1301,7 +1301,7 @@ if __name__ == "__main__":
         if_rope=False,
         if_abs_pos=False,
         patch_merge=True,
-        use_prev_ssm_state=True
+        use_prev_ssm_state=False
     ).to(device)
     
     from model.module.vmamba_module_v3 import selective_scan_flop_jit
@@ -1321,7 +1321,7 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     net.eval()
-    for img_sz in [64, 128, 256, 512]:
+    for img_sz in [1024]:
         scale = 4
         img_size = 64 // scale
         chan = 8
@@ -1350,11 +1350,11 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        # print(torch.cuda.memory_summary(device=device))
+        print(torch.cuda.memory_summary(device=device))
 
-        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-        net.forward = net._forward_implem
-        flops = FlopCountAnalysis(net, (img, cond))
-        flops.set_op_handle(**supported_ops)
-        print(flop_count_table(flops))
+        # net.forward = net._forward_implem
+        # flops = FlopCountAnalysis(net, (img, cond))
+        # flops.set_op_handle(**supported_ops)
+        # print(flop_count_table(flops))

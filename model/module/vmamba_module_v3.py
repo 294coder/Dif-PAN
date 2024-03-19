@@ -537,9 +537,19 @@ def cross_selective_scan(
     xs = CrossScan.apply(x)  # [bs, k, c, hw]
     
     if no_einsum:
+        x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
+        dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
+        dts = dts.contiguous().view(B, -1, L)
+        dts = F.conv1d(dts, dt_projs_weight.view(K * D, -1, 1), groups=K)
+        
+        
         # previous states cache
-        if prev_states is not None:
+        if prev_states is not None and prev_sta_proj_w is not None:
             # print('use previous states')
+            
+            # Ahdt = A_h * prev_states: (conv1d([B, k*D, N], [k*D, D, 1])) -> [B, k*D, N]
+            # Bxs = B_x * xs: (conv1d([B, k*D, L], [k*D, N, 1])) -> [B, k*N, L]
+            
             prev_states = F.conv1d(prev_states.view(B, -1, prev_states.shape[-1]),  # [B, D, d_state]
                                    prev_sta_proj_w.view(-1, D, 1),
                                    bias=prev_sta_proj_bias.view(-1) if prev_sta_proj_bias is not None else None, 
@@ -550,10 +560,6 @@ def cross_selective_scan(
                               groups=K)
             upd = torch.einsum('bkdn,bknl->bkdl', prev_states.view(B, K, -1, N), gating.view(B, K, -1, L))
             xs = xs + upd
-            
-        x_dbl = F.conv1d(xs.view(B, -1, L), x_proj_weight.view(-1, D, 1), bias=(x_proj_bias.view(-1) if x_proj_bias is not None else None), groups=K)
-        dts, Bs, Cs = torch.split(x_dbl.view(B, K, -1, L), [R, N, N], dim=2)
-        dts = F.conv1d(dts.contiguous().view(B, -1, L), dt_projs_weight.view(K * D, -1, 1), groups=K)
         
     else:
         # TODO: gating previous states cache here
@@ -563,13 +569,24 @@ def cross_selective_scan(
         dts, Bs, Cs = torch.split(x_dbl, [R, N, N], dim=2)
         dts = torch.einsum("b k r l, k d r -> b k d l", dts, dt_projs_weight)
 
-    xs = xs.view(B, -1, L)
-    dts = dts.contiguous().view(B, -1, L)
-    As = -torch.exp(A_logs.to(torch.float)) # (k * c, d_state)
-    Bs = Bs.contiguous()
-    Cs = Cs.contiguous()
-    Ds = Ds.to(torch.float) # (K * c)
+    xs = xs.view(B, -1, L)  # [B, k*D, L]
+    # dts = dts.contiguous().view(B, -1, L)  # [B, k*D, L]
+    As = -torch.exp(A_logs.to(torch.float))  # [k*D, N]
+    Bs = Bs.contiguous()  # [B, k, N, L]
+    Cs = Cs.contiguous()  # [B, k, N, L]
+    Ds = Ds.to(torch.float)  # [k*D]
     delta_bias = dt_projs_bias.view(-1).to(torch.float)
+    
+    # Adt = dt @ A: [B, k*D, N] @ [B, k*D, L] -> [B, k*D, L, N]
+    # dtxs = dt * xs: [B, k*D, L] * [B, k*D, L] -> [B, k*D, L]
+    # Bxsdt = dt @ B: [B, k*D, L] @ [B, k*D, N] -> [B, k*D, L, N]
+    # for L:
+    #   h_i = Adt_i * h_i + Bxsdt_i -> [B, k*D, N] * [B, k*D, N] + [B, k*D, N] -> [B, k*D, N]
+    #   y_i = C_i @ h_i -> [B, k, N] @ [B, k*D, N] -> [B, k*D]
+    #   y_i = y_i + D -> [B, k*D] + [k*D] -> [B, k*D]
+    
+    # Bxs = xs @ B: [B, k, D, L] @ [B, k, N, L] -> [B, k*D, L, N]
+    
 
     if force_fp32:
         xs = xs.to(torch.float)

@@ -4,7 +4,7 @@
 			"path": "../"
 		},
 		{
-			"path": "../../../datasets"
+			"path": "../../../../dataset"
 		},
 		{
 			"path": "../../VMamba"
