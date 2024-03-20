@@ -979,6 +979,7 @@ class ConditionalNAFNet(BaseModel):
         ssm_dec_blk_nums=[],
         ssm_convs=[],
         ssm_chan_upscale=[],
+        ssm_d_states=[],
         use_prev_ssm_state=True,
         window_sizes=[],
         # model settings
@@ -1066,6 +1067,7 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[enc_i],
                             window_size=window_sizes[enc_i],
+                            d_state=ssm_d_states[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_gate=use_prev_ssm_state if i != 0 else False
                         )
@@ -1086,6 +1088,7 @@ class ConditionalNAFNet(BaseModel):
                     chan,
                     ssm_conv=ssm_convs[-1],
                     window_size=window_sizes[-1],
+                    d_state=ssm_d_states[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
                     prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
@@ -1096,7 +1099,6 @@ class ConditionalNAFNet(BaseModel):
 
         ## decoder
         # LEMM layer
-        ssm_convs = list(reversed(ssm_convs))
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
             self.lemm_ups.append(up(chan, permute=True))
             chan = chan // ssm_chan_upscale[::-1][dec_i]
@@ -1109,8 +1111,9 @@ class ConditionalNAFNet(BaseModel):
                         MambaInjectionBlock(
                             condition_channel,
                             chan,
-                            ssm_conv=ssm_convs[dec_i],
+                            ssm_conv=ssm_convs[::-1][dec_i],
                             window_size=window_sizes[::-1][dec_i],
+                            d_state=ssm_d_states[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_gate=use_prev_ssm_state
                         )
@@ -1277,7 +1280,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:2"
+    device = "cuda:3"
     torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
@@ -1297,6 +1300,7 @@ if __name__ == "__main__":
         ssm_dec_blk_nums=[2]*3,
         ssm_chan_upscale=[2]*3,
         window_sizes=[8,8,8],
+        ssm_d_states=[32]*3,
         ssm_convs=[[3, 11], [3, 11], [3, 11]],
         
         pt_img_size=64,
@@ -1323,7 +1327,7 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     net.eval()
-    for img_sz in [64]:
+    for img_sz in [512]:
         scale = 4
         img_size = 64 // scale
         chan = 8
