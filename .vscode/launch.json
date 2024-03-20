@@ -1,0 +1,43 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--proj_name", "panMamba_debug",
+                "--arch", "panMamba",
+                // "--sub_arch", "mwsa_new",
+                "-b", "10",
+                "--device", "cuda:0",
+                "--dataset", "wv3",
+                "--log_metrics",
+                "--warm_up_epochs", "0",
+                "--num_worker", "0",
+                "-e", "2000",
+                "--aug_probs", "0.", "0.",
+                "--loss", "l1ssim",
+                "--val_n_epoch", "1",
+                "--comment", "panMamba debug",
+                "--ergas_ratio", "4", 
+                "--ddp",
+                // "--pretrain", "--pretrain_id", "rsqg64xd", "--non_load_strict"
+            ]
+        }
+    ]
+}
