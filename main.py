@@ -366,6 +366,7 @@ def main(local_rank, args):
         args.batch_size,
         num_workers=args.num_worker,
         sampler=train_sampler,
+        prefetch_factor=8,
         pin_memory=True,
         shuffle=args.shuffle if not args.ddp else None,
     )
@@ -395,7 +396,8 @@ def main(local_rank, args):
     # save checker
     save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
 
-    # start training
+    # start training 
+    # TODO: use safetensor
     with status_tracker:
         train(
             network,

@@ -595,7 +595,7 @@ class MambaInjectionBlock(nn.Module):
         window_size=8,
         d_state=32,
         dt_rank="auto",
-        ssm_conv=7,
+        ssm_conv=[11, 3],
         ssm_ratio=2,
         mlp_ratio=4,
         forward_type="v4",
@@ -618,6 +618,8 @@ class MambaInjectionBlock(nn.Module):
         #                           nn.AdaptiveAvgPool2d(1),
         #                           nn.Conv2d(in_chan, inner_chan*2, 1),
         #                           Rearrange('b c 1 1 -> b 1 1 c'))
+        
+        ssm_local_conv, ssm_global_conv = ssm_conv[0], ssm_conv[1]
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
             drop_path=drop_path,
@@ -625,7 +627,7 @@ class MambaInjectionBlock(nn.Module):
             norm_layer=norm_layer,
             mlp_drop_rate=mlp_drop,
             ssm_d_state=d_state,
-            ssm_conv=ssm_conv,
+            ssm_conv=ssm_global_conv,
             ssm_dt_rank=dt_rank,
             ssm_ratio=ssm_ratio,
             ssm_init='v0',
@@ -643,7 +645,7 @@ class MambaInjectionBlock(nn.Module):
             norm_layer=norm_layer,
             mlp_drop_rate=0.0,
             ssm_d_state=d_state,
-            ssm_conv=ssm_conv,
+            ssm_conv=ssm_local_conv,
             ssm_dt_rank=dt_rank,
             ssm_ratio=1,
             ssm_init='v0',
@@ -873,8 +875,8 @@ class NAFBlock(nn.Module):
             nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
         )
 
-        self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
-        self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        # self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        # self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
 
     def time_forward(self, time, mlp):
         time_emb = mlp(time)
@@ -897,7 +899,7 @@ class NAFBlock(nn.Module):
 
         x = self.dropout1(x)
 
-        y = inp + x * self.beta
+        y = inp + x # * self.beta
 
         x = self.norm2(y)
         x = self.conv4(x)
@@ -906,7 +908,7 @@ class NAFBlock(nn.Module):
 
         x = self.dropout2(x)
 
-        x = y + x * self.gamma
+        x = y + x # * self.gamma
 
         return x
 
@@ -1275,7 +1277,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:0"
+    device = "cuda:2"
     torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
@@ -1284,24 +1286,24 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=8,
+        width=16,
         middle_blk_nums=2,
         
-        naf_enc_blk_nums=[2],
-        naf_dec_blk_nums=[2],
-        naf_chan_upscale=[2],
+        naf_enc_blk_nums=[],
+        naf_dec_blk_nums=[],
+        naf_chan_upscale=[],
         
         ssm_enc_blk_nums=[2]*3,
         ssm_dec_blk_nums=[2]*3,
         ssm_chan_upscale=[2]*3,
-        window_sizes=[4,2,2],
-        ssm_convs=[7,5,3],
+        window_sizes=[8,8,8],
+        ssm_convs=[[3, 11], [3, 11], [3, 11]],
         
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,
         patch_merge=True,
-        use_prev_ssm_state=False
+        use_prev_ssm_state=True
     ).to(device)
     
     from model.module.vmamba_module_v3 import selective_scan_flop_jit
@@ -1321,7 +1323,7 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     net.eval()
-    for img_sz in [1024]:
+    for img_sz in [64]:
         scale = 4
         img_size = 64 // scale
         chan = 8
@@ -1350,11 +1352,11 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        print(torch.cuda.memory_summary(device=device))
+        # print(torch.cuda.memory_summary(device=device))
 
-        # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-        # net.forward = net._forward_implem
-        # flops = FlopCountAnalysis(net, (img, cond))
-        # flops.set_op_handle(**supported_ops)
-        # print(flop_count_table(flops))
+        net.forward = net._forward_implem
+        flops = FlopCountAnalysis(net, (img, cond))
+        flops.set_op_handle(**supported_ops)
+        print(flop_count_table(flops))

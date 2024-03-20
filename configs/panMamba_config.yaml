@@ -75,17 +75,17 @@ network_configs:
 
   ## base config
   width: 16
-  naf_enc_blk_nums: [2]
-  naf_dec_blk_nums: [2]
-  naf_chan_upscale: [2]
+  naf_enc_blk_nums: []
+  naf_dec_blk_nums: []
+  naf_chan_upscale: []
 
   middle_blk_nums: 2
 
   ssm_enc_blk_nums: [2, 2, 2]
   ssm_dec_blk_nums: [2, 2, 2]
   ssm_chan_upscale: [2, 2, 2]
-  window_sizes: [4, 2, 2]
-  ssm_convs: [7, 5, 3]
+  window_sizes: [8,8,8]
+  ssm_convs: [[3,11], [3,11], [3,11]]
   drop_path_rate: 0.2
 
   if_abs_pos: no # buggy: convergence is slow

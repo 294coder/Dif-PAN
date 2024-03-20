@@ -34,9 +34,9 @@
 
 ## panMamba arch
 python main.py --proj_name panMamba --arch panMamba \
--b 256 --device 'cuda:0' --dataset 'wv3' \
+-b 64 --device 'cuda:2' --dataset 'wv3' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
 --logger_on --log_metrics \
 #  --pretrain --pretrain_id 'hqq3pus2' #--non_load_strict
 

@@ -503,6 +503,7 @@ def cross_selective_scan(
     prev_sta_proj_bias:torch.Tensor=None,
     xs_gate_weight:torch.Tensor=None,
     xs_gate_bias:torch.Tensor=None,
+    ssm_state_ratio:torch.Tensor=None,
 ):
     # out_norm: whatever fits (B, L, C); LayerNorm; Sigmoid; Softmax(dim=1);...
 
@@ -559,7 +560,8 @@ def cross_selective_scan(
                               bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), 
                               groups=K)
             upd = torch.einsum('bkdn,bknl->bkdl', prev_states.view(B, K, -1, N), gating.view(B, K, -1, L))
-            xs = xs + upd
+            xs = xs + upd * ssm_state_ratio
+            # print('----using gating ratio----')
         
     else:
         # TODO: gating previous states cache here
@@ -788,12 +790,14 @@ class SS2D(nn.Module):
             ]
             self.ssm_state_weight = nn.Parameter(torch.stack([t.weight for t in self.ssm_state_proj], dim=0))
             self.xs_gate_weight = nn.Parameter(torch.stack([t.weight for t in self.xs_gate], dim=0))
+            self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
             # bias here
             
             del self.ssm_state_proj, self.xs_gate
         else:
             self.ssm_state_weight = None
             self.xs_gate_weight = None
+            self.ssm_gate_ratio = None
         
         # out proj =======================================
         self.out_proj = nn.Linear(d_inner, d_model, bias=bias, **factory_kwargs)
@@ -976,7 +980,8 @@ class SS2D(nn.Module):
             no_einsum=no_einsum,
             prev_states=prev_states,
             prev_sta_proj_w=self.ssm_state_weight,
-            xs_gate_weight=self.xs_gate_weight
+            xs_gate_weight=self.xs_gate_weight,
+            ssm_state_ratio=self.ssm_gate_ratio,
         )
         return x_with_states
     
