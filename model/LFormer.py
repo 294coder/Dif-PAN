@@ -3,11 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from einops import rearrange
-from beartype import beartype
-from typing import Tuple, List, Dict, Union, Optional, Any
+
+import sys
+sys.path.append('./')
 
 from model.base_model import register_model, BaseModel
-from utils import get_local
+# from utils import get_local
 
 # get_local.activate()
 

@@ -1,6 +1,8 @@
 import os
 
-os.environ["MPLCONFIGDIR"] = os.getcwd() + ".hypothesis/"
+os.environ["MPLCONFIGDIR"] = ".hypothesis/"
+os.environ["HF_HOME"] = ".cache/transformers"
+os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
 import torch
 from functools import partial
