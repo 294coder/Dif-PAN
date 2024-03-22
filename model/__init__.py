@@ -60,7 +60,7 @@ from model.panMamba import ConditionalNAFNet
 import importlib
 import sys
 
-sys.append('./')
+sys.path.append('./')
 
 def import_model_from_name(name):
     module = importlib.import_module(name, package='model')

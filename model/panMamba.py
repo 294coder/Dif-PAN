@@ -593,15 +593,16 @@ class MambaInjectionBlock(nn.Module):
         mlp_drop=0.0,
         norm_layer=partial(nn.LayerNorm, eps=1e-6),
         window_size=8,
-        d_state=32,
+        d_states=[16, 32],
         dt_rank="auto",
-        ssm_conv=[11, 3],
+        ssm_conv=[3, 11],
         ssm_ratio=2,
         mlp_ratio=4,
         forward_type="v4",
         use_ckpt=False,
         local_shift_size=0,
-        prev_state_gate=False,
+        prev_state_chan=None,
+        skip_state_chan=None,
         **mamba_kwargs,
     ):
         super().__init__()
@@ -620,20 +621,23 @@ class MambaInjectionBlock(nn.Module):
         #                           Rearrange('b c 1 1 -> b 1 1 c'))
         
         ssm_local_conv, ssm_global_conv = ssm_conv[0], ssm_conv[1]
+        local_d_state, global_d_state = d_states[0], d_states[1]
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
             drop_path=drop_path,
             mlp_ratio=mlp_ratio,
             norm_layer=norm_layer,
             mlp_drop_rate=mlp_drop,
-            ssm_d_state=d_state,
+            ssm_d_state=local_d_state,
             ssm_conv=ssm_global_conv,
             ssm_dt_rank=dt_rank,
             ssm_ratio=ssm_ratio,
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
-            prev_state_gate=prev_state_gate,
+            # prev_state_gate=False,  # may use much gpu mem
+            prev_state_chan=None,
+            skip_state_chan=None,
             **mamba_kwargs,
         )
 
@@ -644,14 +648,16 @@ class MambaInjectionBlock(nn.Module):
             mlp_ratio=1,
             norm_layer=norm_layer,
             mlp_drop_rate=0.0,
-            ssm_d_state=d_state,
+            ssm_d_state=global_d_state,
             ssm_conv=ssm_local_conv,
             ssm_dt_rank=dt_rank,
-            ssm_ratio=1,
+            ssm_ratio=ssm_ratio,
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
-            prev_state_gate=prev_state_gate,
+            prev_state_chan=prev_state_chan,
+            skip_state_chan=skip_state_chan,
+            # prev_state_gate=prev_state_gate,
             **mamba_kwargs,
         )
         # self.norm = norm_layer(inner_chan)
@@ -677,6 +683,8 @@ class MambaInjectionBlock(nn.Module):
                 c_shuffle=True,
                 prev_local_state: torch.Tensor=None,
                 prev_global_state: torch.Tensor=None,
+                skip_local_state: torch.Tensor=None,
+                skip_global_state: torch.Tensor=None,
                 ):
         b, h, w, c = feat.shape
         cond = F.interpolate(cond, size=(h, w), mode="bilinear", align_corners=True)
@@ -697,7 +705,7 @@ class MambaInjectionBlock(nn.Module):
             x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))
         
         xs_local = window_partition(x, self.window_size)
-        xs_local, local_ssm_states = self.mamba_inner_shared(xs_local, prev_local_state)
+        xs_local, local_ssm_states = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
         x_local = window_reverse(xs_local, self.window_size, h, w)
         
         if self.local_shift_size > 0:
@@ -712,11 +720,19 @@ class MambaInjectionBlock(nn.Module):
         # enhance v1
         # x = self.mamba(self.inner_to_outter_conv(torch.cat([x_local, x], dim=-1)))
         # enhance v2
-        x, global_ssm_state = self.mamba(x_local * self.enhanced_factor + x, prev_global_state)
         
-        # if c_shuffle:
-        #     c_perm = torch.argsort(c_perm)
-        #     x = x[:, :, :, c_perm]
+        # local ssm state to global ssm state
+        if self.mamba_inner_shared.prev_state_gate:
+            global_ssm_state = reduce(local_ssm_states, '(b w) d n -> b d n', 'mean', b=b)
+            if prev_global_state is not None:
+                global_ssm_state = global_ssm_state + prev_global_state
+        else: global_ssm_state = None
+            
+        x, global_ssm_state = self.mamba(x_local * self.enhanced_factor + x, global_ssm_state, skip_global_state)
+        
+        if c_shuffle:
+            c_perm = torch.argsort(c_perm)
+            x = x[:, :, :, c_perm]
 
         # x_spe = F.adaptive_avg_pool2d(
         #     x_in.permute(0, 3, 1, 2), self.adaptive_pool_size
@@ -727,11 +743,17 @@ class MambaInjectionBlock(nn.Module):
         # gamma, beta = self.films['gamma'], self.films['beta']
         # x = x * (1 + gamma / gamma.norm()) + beta / beta.norm()
         # x = self.out_conv(self.act(self.norm(x))) + x
-        return x, local_ssm_states, global_ssm_state
+        
+        if not self.mamba_inner_shared.prev_state_gate: 
+            local_ssm_states = None
+        if not self.mamba.prev_state_gate:
+            global_ssm_state = None
+        
+        return x, local_ssm_states, local_ssm_states
 
 
 class UniSequential(nn.Module):
-    def __init__(self, *args):
+    def __init__(self, *args: tuple[nn.Module]):
         super().__init__()
         self.mods = nn.ModuleList(args)
 
@@ -751,7 +773,11 @@ class UniSequential(nn.Module):
             outp = mod(outp, cond)
         return outp
         
-    def LEMM_enc_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
+    def LEMM_enc_forward(self, 
+                         feat, 
+                         cond,
+                         c_shuffle=True,
+                         states=[None, None]):
         outp = feat
         local_state, global_state = states[0], states[1]
         for mod in self.mods:
@@ -759,12 +785,19 @@ class UniSequential(nn.Module):
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
 
-    def LEMM_dec_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
+    def LEMM_dec_forward(self, 
+                         feat, 
+                         cond, 
+                         c_shuffle=True, 
+                         prev_states=[None, None],
+                         skip_states=[None, None]):
         outp = feat
-        local_state, global_state = states[0], states[1]
+        # skip_local_state, skip_global_state = skip_states[0], skip_states[1]
+        # prev_local_state, prev_global_state = prev_states[0], prev_states[1]
+        
         outp = self.mods[0](outp)
         for mod in self.mods[1:]:
-            outp, local_state, global_state = mod(outp, cond, c_shuffle, local_state, global_state)  # in_block states share
+            outp, local_state, global_state = mod(outp, cond, c_shuffle, *[prev_states + skip_states])  # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
     
@@ -1067,15 +1100,17 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[enc_i],
                             window_size=window_sizes[enc_i],
-                            d_state=ssm_d_states[enc_i],
+                            d_states=ssm_d_states[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state if i != 0 else False
+                            prev_state_chan=chan if i != 0 else None,
+                            # prev_state_gate=use_prev_ssm_state if i != 0 else False
                         )
                         for i in range(num)
                     ]
                 )
             )
             self.lemm_downs.append(down(chan, down_type='conv', permute=True))
+            prev_chan = chan
             chan = chan * ssm_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
@@ -1088,9 +1123,10 @@ class ConditionalNAFNet(BaseModel):
                     chan,
                     ssm_conv=ssm_convs[-1],
                     window_size=window_sizes[-1],
-                    d_state=ssm_d_states[-1],
+                    d_states=ssm_d_states[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
-                    prev_state_gate=use_prev_ssm_state if i != 0 else False
+                    prev_state_chan=prev_chan,
+                    # prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
                 for i in range(num)
             ]
@@ -1101,6 +1137,7 @@ class ConditionalNAFNet(BaseModel):
         # LEMM layer
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
             self.lemm_ups.append(up(chan, permute=True))
+            prev_chan = chan
             chan = chan // ssm_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
 
@@ -1113,9 +1150,10 @@ class ConditionalNAFNet(BaseModel):
                             chan,
                             ssm_conv=ssm_convs[::-1][dec_i],
                             window_size=window_sizes[::-1][dec_i],
-                            d_state=ssm_d_states[::-1][dec_i],
+                            d_states=ssm_d_states[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state
+                            prev_state_chan=prev_chan,
+                            # prev_state_gate=use_prev_ssm_state
                         )
                         for i in range(num)
                     ],
@@ -1209,19 +1247,20 @@ class ConditionalNAFNet(BaseModel):
         x = rearrange(x, 'b c h w -> b h w c')
         for encoder, down in zip(self.lemm_encoders, self.lemm_downs):
             # x = rope(x)
-            x, states = encoder.LEMM_enc_forward(x, cond, c_shuffle)
+            # TODO: input previous state
+            x, states = encoder.LEMM_enc_forward(x, cond, c_shuffle, states)
             lemm_encs.append(x)
             encs_states.append(states)
             x = down(x)
 
         # x = self.middle_rope(x)
-        x, states = self.middle_blks.LEMM_enc_forward(x, cond, c_shuffle)
+        x, states = self.middle_blks.LEMM_enc_forward(x, cond, c_shuffle, states)
 
         for decoder, up, enc_skip, enc_state_skip in zip(self.lemm_decoders, self.lemm_ups, lemm_encs[::-1], encs_states[::-1]):
             x = up(x)
             x = torch.cat([x, enc_skip], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
-            x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, enc_state_skip)
+            x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, enc_state_skip, states)
             
         x = rearrange(x, 'b h w c -> b c h w')
         for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
@@ -1280,7 +1319,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:3"
+    device = "cuda:0"
     torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
@@ -1289,19 +1328,19 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=16,
+        width=32,
         middle_blk_nums=2,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[2]*3,
-        ssm_dec_blk_nums=[2]*3,
+        ssm_enc_blk_nums=[1]*3,
+        ssm_dec_blk_nums=[1]*3,
         ssm_chan_upscale=[2]*3,
         window_sizes=[8,8,8],
-        ssm_d_states=[32]*3,
-        ssm_convs=[[3, 11], [3, 11], [3, 11]],
+        ssm_d_states=[[32, 32], [32, 32], [32, 32]],
+        ssm_convs=[[5, 11], [5, 11], [5, 11]],
         
         pt_img_size=64,
         if_rope=False,
@@ -1326,8 +1365,8 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    net.eval()
-    for img_sz in [512]:
+    # net.eval()
+    for img_sz in [64]:
         scale = 4
         img_size = 64 // scale
         chan = 8
@@ -1340,13 +1379,13 @@ if __name__ == "__main__":
         # net = torch.compile(net)
 
         out = net._forward_implem(img, cond)
-        # loss = F.mse_loss(out, gt)
-        # loss.backward()
-        # print(loss)
-        # # find unused params
-        # for n, p in net.named_parameters():
-        #     if p.grad is None:
-        #         print(n, "has no grad")
+        loss = F.mse_loss(out, gt)
+        loss.backward()
+        print(loss)
+        # find unused params
+        for n, p in net.named_parameters():
+            if p.grad is None:
+                print(n, "has no grad")
 
         # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
 
@@ -1356,11 +1395,11 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        # print(torch.cuda.memory_summary(device=device))
+        print(torch.cuda.memory_summary(device=device))
 
-        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-        net.forward = net._forward_implem
-        flops = FlopCountAnalysis(net, (img, cond))
-        flops.set_op_handle(**supported_ops)
-        print(flop_count_table(flops))
+        # net.forward = net._forward_implem
+        # flops = FlopCountAnalysis(net, (img, cond))
+        # flops.set_op_handle(**supported_ops)
+        # print(flop_count_table(flops))

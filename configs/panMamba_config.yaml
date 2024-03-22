@@ -12,18 +12,18 @@ lr_scheduler:
   #  T_max: 2000
   #  eta_min: !!float 1e-8
 
-  name: "plateau"
-  mode: "min"
-  threshold: !!float 1e-5 # l1
-  min_lr: !!float 1e-6
-  patience: 10
-  factor: !!float 0.1
-  cooldown: 5
-  threshold_mode: "rel"
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 1e-5 # l1
+  # min_lr: !!float 1e-6
+  # patience: 20
+  # factor: !!float 0.1
+  # cooldown: 5
+  # threshold_mode: "rel"
 
-  # name: "multi_step"
-  # milestones: [800] #[100, 800]
-  # gamma: 0.2
+  name: "multi_step"
+  milestones: [100, 1000] #[100, 800]
+  gamma: 0.2
 
 max_norm: 0.03
 ema_decay: 0.999
@@ -74,7 +74,7 @@ network_configs:
   # drop_path_rate: 0.1
 
   ## base config
-  width: 32
+  width: 24
   naf_enc_blk_nums: []
   naf_dec_blk_nums: []
   naf_chan_upscale: []
@@ -85,7 +85,7 @@ network_configs:
   ssm_dec_blk_nums: [2, 2, 2]
   ssm_chan_upscale: [2, 2, 2]
   window_sizes: [8,8,8]
-  ssm_convs: [[3,11], [3,11], [3,11]]
+  ssm_convs: [[5,11], [5,11], [5,11]]
   ssm_d_states: [32, 32, 32]
   drop_path_rate: 0.1
 

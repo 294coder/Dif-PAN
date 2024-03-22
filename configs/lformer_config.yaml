@@ -4,18 +4,18 @@ optimizer:
   weight_decay: !!float 1e-6
 
 lr_scheduler:
-  # name: "multi_step"
-  # milestones: [100, 1000]
-  # gamma: 0.1
-  #  name: 'identity'
+  name: "multi_step"
+  milestones: [100, 1000]
+  gamma: 0.1
+  # name: 'identity'
 
-  name: "plateau"
-  mode: "min"
-  threshold: !!float 5e-6 # l1
-  min_lr: !!float 1e-6
-  patience: 30
-  factor: !!float 0.2
-  cooldown: 10
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 5e-6 # l1
+  # min_lr: !!float 1e-6
+  # patience: 30
+  # factor: !!float 0.2
+  # cooldown: 10
 
 max_norm: 0.03
 ema_decay: 0.999
@@ -24,8 +24,8 @@ path:
   wv3_train_path: "/volsparse1/dataset/PanCollection/training_data/train_wv3_9714.h5"
   wv3_val_path: "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
 
-  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
-  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  gf2_train_path: "/volsparse1/dataset/PanCollection/training_data/train_gf2_19809.h5"
+  gf2_val_path: "/volsparse1/dataset/PanCollection/test_data/test_gf2_multiExm1.h5"
 
 network_configs:
   # lformer_ablation:
@@ -37,8 +37,8 @@ network_configs:
   lformer:
     pan_dim: 1
     lms_dim: 8 #102 #128
-    attn_dim: 32
-    hp_dim: 32
+    attn_dim: 64
+    hp_dim: 64
     n_stage: 5
     patch_merge: yes
     crop_batch_size: 64
