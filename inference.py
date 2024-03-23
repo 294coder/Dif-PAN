@@ -27,11 +27,11 @@ from utils.visualize import invert_normalized
 
 device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "gf"
+dataset_type = "wv3"
 save_format = "mat"
 full_res = False
-split_patch = True
-patch_size = 16
+split_patch = False
+patch_size = 64
 ergas_ratio = 4
 patch_size_list = [
     patch_size // ergas_ratio,
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "panMamba"
+name = "lformer"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -106,6 +106,8 @@ print("=" * 50)
 
 # p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
 # p = "./weight/lformer_dcu45ddw.pth"  # lformer
+
+p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
 # ========================================================
 
@@ -176,7 +178,7 @@ print("=" * 50)
 
 # p = './weight/lformer_3dvlsog6.pth'
 
-p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+# p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 # =================================================
 
 # ===============QB checkpoint=====================
@@ -243,7 +245,7 @@ p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 
 if dataset_type == "wv3":
     if not full_res:
-        path = "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+        path = "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
         path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
@@ -301,7 +303,7 @@ else:
 # for k, v in params['model'].items():
 #    odict['module.' + k] = v
 
-
+ 
 # model.load_state_dict(params["model"])
 model = module_load(p, model, device, strict=True)
 model = model.to(device)
@@ -328,7 +330,7 @@ dl = data.DataLoader(ds, batch_size=dl_bs)
 # -----------------------------------------------------
 
 # -------------------inference-------------------------
-all_sr = loop_func(model, dl, device, crop_bs, split_patch=split_patch)
+all_sr = loop_func(model, dl, device, split_patch=split_patch)
 # -----------------------------------------------------
 
 # -------------------save result-----------------------

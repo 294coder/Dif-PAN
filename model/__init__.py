@@ -1,14 +1,14 @@
 # import os
 # import importlib
 
-from model.build_network import build_network
+# from model.build_network import build_network
 from model.base_model import MODELS
 
 # ==============================================
 # register all models
-from model.DCFNet import DCFNet
-from model.FusionNet import FusionNet
-from model.PANNet import VanillaPANNet
+# from model.DCFNet import DCFNet
+# from model.FusionNet import FusionNet
+# from model.PANNet import VanillaPANNet
 
 # from model.M3DNet import M3DNet
 # from model.panformer import PanFormerGAU, PanFormerUNet2, PanFormerSwitch, PanFormerUNet, PanFormer
@@ -18,9 +18,9 @@ from model.PANNet import VanillaPANNet
 # from model.dcformer_dynamic import DCFormerDynamicConv
 # from model.dcformer_reduce import DCFormer_Reduce
 # from model.dcformer_mwsa import DCFormerMWSA
-from model.dcformer_mwsa_wx import DCFormerMWSA
+# from model.dcformer_mwsa_wx import DCFormerMWSA
 
-from model.fuseformer import MainNet
+# from model.fuseformer import MainNet
 
 # from model.dcformer_reduce_c_64 import DCFormer_Reduce_C64
 # from model.dcformer_reduce_c_32_tmp import DCFormer_Reduce_C32
@@ -33,36 +33,53 @@ from model.fuseformer import MainNet
 # from model.SSRNet import SSRNET
 # from model.hsrnet import HSRNet
 # from model.restfnet import ResTFNet
-from model.HPMNet import fusionnet
+# from model.HPMNet import fusionnet
 
 # ablation
 # from model.dcformer_abla_only_channel_attn import DCFormer_XCA
 # from model.dcformer_abla_only_mwa import DCFormerOnlyMWA
 # from model.dcformer_abla_only_cross_branch_mwsa import DCFormerOnlyCrossBranchMWSA
-from model.ablation_exps.dcformer_abla_wo_ghost_module import DCFormerMWSA
-from model.ablation_exps.dcformer_abla_only_XCA import DCFormerMWSA
-from model.ablation_exps.dcformer_abla_only_MWSA import DCFormerMWSA
-from model.ablation_exps.dcformer_abla_in_scale_MWSA import DCFormerMWSA
+# from model.ablation_exps.dcformer_abla_wo_ghost_module import DCFormerMWSA
+# from model.ablation_exps.dcformer_abla_only_XCA import DCFormerMWSA
+# from model.ablation_exps.dcformer_abla_only_MWSA import DCFormerMWSA
+# from model.ablation_exps.dcformer_abla_in_scale_MWSA import DCFormerMWSA
 
 # disscussion
-from model.dcformer_disscuss_mog_fusion_head import DCFormerMWSAMoGFusionHead
-from model.dcformer_dissucss_multisource_proj import DCFormerMWSAMultiSourceProj
+# from model.dcformer_disscuss_mog_fusion_head import DCFormerMWSAMoGFusionHead
+# from model.dcformer_dissucss_multisource_proj import DCFormerMWSAMultiSourceProj
 
 from model.LFormer import AttnFuseMain
-from model.LFormer_ablation_skip_attn import AttnFuseMain
+from model.lformer_reduced_swin_attn import AttnFuseMain
+# from model.lformer_ablation.LFormer_ablation_skip_attn import AttnFuseMain
 
 from model.panMamba import ConditionalNAFNet
 
 # others
 # from model.GPPNN import GPPNN
 
-# file_p = os.path.dirname(__file__)
-# model_ps = os.listdir(file_p)
-# model_ps.remove('base_model.py')
-# model_ps.remove('__init__.py')
-#
-# _all_models = [
-#     importlib.import_module('model.' + p[:-3])
-#     for p in model_ps if p.endswith('.py')
-# ]
+# TODO: dynamic importing
+import importlib
+import sys
+
+sys.path.append('./')
+
+def import_model_from_name(name):
+    module = importlib.import_module(name, package='model')
+    model_cls = getattr(module, name)
+    return model_cls
+
+def build_network(model_name:str=None, **kwargs):
+    assert model_name is not None, 'model_name is not specified'
+    try:
+        net = MODELS.get(model_name)
+    except:
+        try:
+            net = import_model_from_name(model_name)
+        except:
+            net = MODELS.get(model_name.split('.')[-1])
+        
+    assert net is not None, f'no model named {model_name} is registered'
+    # import networks
+    return net(**kwargs)
+
 # ==============================================

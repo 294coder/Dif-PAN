@@ -1,6 +1,5 @@
 import argparse
 import os
-# os.environ['CUDA_VISIBLE_DEVICES']='0,1'
 import os.path as osp
 
 import h5py
@@ -42,9 +41,7 @@ def get_args():
 
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
-    parser.add_argument(
-        "--sub_arch", default="none", help="panformer sub-architecture name"
-    )
+    parser.add_argument("--sub_arch", default="none", help="panformer sub-architecture name")
 
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
@@ -53,48 +50,19 @@ def get_args():
     parser.add_argument("-e", "--epochs", type=int, default=500)
     parser.add_argument("--val_n_epoch", type=int, default=30)
     parser.add_argument("--warm_up_epochs", type=int, default=80)
-    parser.add_argument(
-        "-l",
-        "--loss",
-        type=str,
-        default="mse",
-        choices=[
-            "mse",
-            "l1",
-            "hybrid",
-            "smoothl1",
-            "l1ssim",
-            "charbssim",
-            "ssimsf",
-            "ssimmci",
-            "mcgmci",
-            "ssimrmi_fuse",
-            " pia_fuse",
-            "u2fusion",
-            " swinfusion",
-            "hpm",
-            "none",
-            "None",
-        ],
-    )
+    parser.add_argument( "-l", "--loss", type=str, default="mse", choices=[ "mse", "l1", "hybrid", "smoothl1", "l1ssim", "charbssim", "ssimsf", "ssimmci", "mcgmci", "ssimrmi_fuse", "pia_fuse", "u2fusion", "swinfusion", "hpm", "none", "None",],)
     parser.add_argument("--grad_accum_ep", type=int, default=None)
     parser.add_argument("--save_every_eval", action="store_true", default=False)
 
     # resume training config
-    parser.add_argument(
-        "--resume_ep", default=None, required=False, help="do not specify it"
-    )
+    parser.add_argument("--resume_ep", default=None, required=False, help="do not specify it")
     parser.add_argument("--resume_lr", type=float, required=False, default=None)
     parser.add_argument("--resume_total_epochs", type=int, required=False, default=None)
 
     # path and load
-    parser.add_argument(
-        "-p", "--path", type=str, default=None, help="only for unsplitted dataset"
-    )
+    parser.add_argument("-p", "--path", type=str, default=None, help="only for unsplitted dataset")
     parser.add_argument("--split_ratio", type=float, default=None)
-    parser.add_argument(
-        "--load", action="store_true", default=False, help="resume training"
-    )
+    parser.add_argument("--load", action="store_true", default=False, help="resume training")
     parser.add_argument("--save_base_path", type=str, default="./weight")
 
     # datasets config
@@ -111,12 +79,7 @@ def get_args():
     parser.add_argument("--logger_on", action="store_true", default=False)
     parser.add_argument("--proj_name", type=str, default="panformer_wv3")
     parser.add_argument("--run_name", type=str, default=None)
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default="None",
-        help="used in wandb logger, please not use it in tensorboard logger",
-    )
+    parser.add_argument( "--resume", type=str, default="None", help="used in wandb logger, please not use it in tensorboard logger")
     parser.add_argument("--run_id", type=str, default=generate_id())
     parser.add_argument("--watch_log_freq", type=int, default=10)
     parser.add_argument("--watch_type", type=str, default="None")
@@ -125,9 +88,7 @@ def get_args():
     # ddp setting
     parser.add_argument("--local_rank", type=int)
     parser.add_argument("--world-size", type=int, default=2)
-    parser.add_argument(
-        "--dist-url", default="env://", help="url used to set up distributed training"
-    )
+    parser.add_argument("--dist-url", default="env://", help="url used to set up distributed training")
     parser.add_argument("--dp", action="store_true", default=False)
     parser.add_argument("--ddp", action="store_true", default=False)
     parser.add_argument("-d", "--device", type=str, default="cuda:0")
@@ -140,6 +101,8 @@ def get_args():
 
 
 def main(local_rank, args):
+    if type(local_rank) == str: 
+        local_rank = int(local_rank.split(':')[-1])
     set_all_seed(args.seed + local_rank)
     torch.cuda.set_device(local_rank if args.ddp else args.device)
 
@@ -259,9 +222,7 @@ def main(local_rank, args):
         logger = NoneLogger()
 
     # get datasets and dataloader
-    if (
-        args.split_ratio is not None and args.path is not None and False
-    ):  # never reach here
+    if args.split_ratio is not None and args.path is not None and False:  # never reach here
         # FIXME: only support splitting worldview3 datasets
         # Warn: will be decrepated in the next update
         train_ds, val_ds = make_datasets(
@@ -432,11 +393,14 @@ if __name__ == "__main__":
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "5700"
-    os.environ["HF_HOME"] = ".cache/transformers"
-    os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
     args = get_args()
     # print(args)
 
-    mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
-    # main(0, args)
+    if (not args.ddp) and (not args.dp): 
+        print('using one gpu')
+        main(args.device, args)
+    else:
+        print('SPAWN: using multiple gpus')
+        # TODO: resort to accelerator method, to avoid multi-processing dataloader using more RAM
+        mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)

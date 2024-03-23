@@ -25,20 +25,20 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-# python main.py --proj_name lformer_swin --arch lformer \
-# -b 20 --device 'cuda:2' --dataset 'gf2' \
-# --warm_up_epochs 0 --num_worker 0 -e 4000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'lformer swin arch on gf2 dataset' \
+# python main.py --proj_name lformer_reduced --arch lformer \
+# -b 64 --device 'cuda:1' --dataset 'wv3' \
+# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer reduced arch remove k norm on wv3 dataset' \
 # --logger_on --log_metrics \
 
 
 ## panMamba arch
 python main.py --proj_name panMamba --arch panMamba \
--b 64 --device 'cuda:2' --dataset 'wv3' \
+-b 128 --device 'cuda:1' --dataset 'wv3' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
+--loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
 --logger_on --log_metrics \
-#  --pretrain --pretrain_id 'hqq3pus2' #--non_load_strict
+# --pretrain --pretrain_id 'n95oo9f6' #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

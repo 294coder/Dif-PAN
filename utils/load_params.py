@@ -35,10 +35,11 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
         _load_fn(model, params_load, strict)
     except Exception:
         # data parallel mode will save params with keys' prefix is 'module'.
-        odict = OrderedDict()
-        for k, v in params_load.items():
-            odict['module.' + k] = v
-            params[spec_key] = odict
+        if isinstance(params_load, dict):
+            odict = OrderedDict()
+            for k, v in params_load.items():
+                odict['module.' + k] = v
+                params[spec_key] = odict
         
         if 'ema' not in spec_key:
             _load_fn(model, params_load, strict)
