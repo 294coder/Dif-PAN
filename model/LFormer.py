@@ -8,7 +8,7 @@ import sys
 sys.path.append('./')
 
 from model.base_model import register_model, BaseModel
-# from utils import get_local
+from utils import get_local
 
 # get_local.activate()
 
@@ -110,10 +110,10 @@ def window_partition(x, window_size):
     Returns:
         windows: (num_windows*B, window_size, window_size, C)
     """
-    # B, C, H, W = x.shape
-    # x = x.view(B, C, H // window_size, window_size, W // window_size, window_size)
-    # windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
-    windows = rearrange(x, "b c (h w1) (w w2) -> (b w1 w2) c h w", h=window_size, w=window_size)
+    B, C, H, W = x.shape
+    x = x.view(B, C, H // window_size, window_size, W // window_size, window_size)
+    windows = x.permute(0, 2, 4, 3, 5, 1).contiguous().view(-1, window_size, window_size, C)
+    # windows = rearrange(x, "b c (h w1) (w w2) -> (b w1 w2) c h w", h=window_size, w=window_size)
     return windows
 
 
@@ -128,10 +128,10 @@ def window_reverse(windows, window_size, H, W):
         x: (B, C, H, W)
     """
     B = int(windows.shape[0] / (H * W / window_size / window_size))
-    # x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
-    # x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
-    x = rearrange(windows, '(b w1 w2) c h w -> b c (h w1) (w w2)', 
-                  b=B, w1=H//window_size, w2=W//window_size)
+    x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
+    x = x.permute(0, 5, 1, 3, 2, 4).contiguous().view(B, -1, H, W)
+    # x = rearrange(windows, '(b w1 w2) c h w -> b c (h w1) (w w2)', 
+    #               b=B, w1=H//window_size, w2=W//window_size)
     return x
 
 
@@ -151,15 +151,23 @@ class FirstAttn(nn.Module):
         
         self.ws = window_size
 
-        self.rearrange = Rearrange("b (nhead c) h w -> b nhead c (h w)", nhead=nheads)
+        # self.rearrange = Rearrange("b (nhead c) h w -> b nhead c (h w)", nhead=nheads)
         self.q = nn.Sequential(
             nn.Conv2d(pan_dim, inner_dim, 1, bias=True),
             nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, groups=inner_dim),
+            # nn.Linear(pan_dim, inner_dim)
         )
-        self.kv = nn.Sequential(
-            nn.Conv2d(lms_dim, inner_dim * 2, 1, bias=True),
-            nn.Conv2d(inner_dim * 2, inner_dim * 2, 3, 1, 1, groups=inner_dim * 2),
+        self.k = nn.Sequential(
+            nn.Conv2d(lms_dim, inner_dim, 1, bias=True),
+            nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, groups=inner_dim),
+            # nn.Linear(lms_dim, inner_dim)
         )
+        self.v = nn.Sequential(
+            nn.Conv2d(lms_dim, inner_dim, 1, bias=True),
+            nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, groups=inner_dim),
+            # nn.Linear(lms_dim, inner_dim)
+        )
+        self.proj_out = nn.Linear(inner_dim, inner_dim)
         if first_layer:
             self.q.append(
                 nn.Sequential(
@@ -183,30 +191,40 @@ class FirstAttn(nn.Module):
 
         self.attn_drop = nn.Dropout(attn_drop)
 
-    # @get_local("attn", "out")
+    @get_local("attn", "out")
     def forward(self, lms, pan):
         *_, h, w = lms.shape
 
         lms = self.ms_pre_norm(lms)
         pan = self.pan_pre_norm(pan)
         
+        
         q = self.q(pan)  # q: pan
-        k, v = self.kv(lms).chunk(2, dim=1)  # kv: lms
+        k = self.k(lms)
+        v = self.v(lms)  # kv: lms
 
-        q, k, v = map(lambda x: self.rearrange(window_partition(x, self.ws)), (q, k, v))
-        # q, k, v = map(lambda x: F.normalize(x, dim=-1), (q, k, v))
+        # lms, pan = window_partition(lms, self.ws), window_partition(pan, self.ws)
+        q, k, v = map(lambda x: window_partition(x, self.ws), (q, k, v))
+        # q, k, v = map(lambda x: F.normalize(x, dim=-1), (q, k, v))        
 
-        attn = torch.einsum("b h d m, b h d n -> b h m n", q, k)  # lms x pan
+        # attn = torch.einsum("b h d m, b h d n -> b h m n", q, k)  # pan x lms
+        q, k, v= map(lambda x: rearrange(x, 'b wh ww (head c) -> b head (wh ww) c', head=self.nheads), 
+                     [q, k, v])
+        
+        # Check: key norm may help? normalize on hw dimension.
+        k = F.normalize(k, dim=-2)
+        
+        attn = q @ k.transpose(-2, -1)  # [b, head, n, c] @ [b, head, c, m]
         attn = self.attn_drop(attn)
 
         attn = attn.softmax(-1)
 
-        out = torch.einsum("b h m n, b h d n -> b h d m", attn, v)
-        out = rearrange(
-            out, "b nhead d (h w) -> b (nhead d) h w", nhead=self.nheads, h=self.ws, w=self.ws
-        )
-        out = window_reverse(out, self.ws, h, w)
+        # out = torch.einsum("b h m n, b h d n -> b h d m", attn, v)
+        out = attn @ v  # [b, head, n, m] @ [b, head, m, c]
+        out = rearrange(out, "b nhead n d -> b n (nhead d)")
+        out = self.proj_out(out).transpose(-2, -1).contiguous()
         
+        out = window_reverse(out, self.ws, h, w)
         return attn, out
 
 
@@ -222,35 +240,38 @@ class MSReversibleRefine(nn.Module):
                 # nn.BatchNorm2d(dim),
             )
         )
+        if not first_stage:
+            self.proj_v = nn.Linear(dim, dim)
+            self.reflash_attn = ReflashAttn(nhead=nhead)
         self.fuse_conv = nn.Conv2d(dim + hp_dim, dim, 3, 1, 1)
-        self.reflash_attn = ReflashAttn(nhead=nhead)
 
         self.nhead = nhead
         self.first_stage = first_stage
 
-    # @get_local("reflashed_attn", "reflashed_out")
+    @get_local("reflashed_attn", "reflashed_out")
     def forward(self, reuse_attn, refined_lms, hp_in):
         *_, h, w = refined_lms.shape
 
         if not self.first_stage:
-            reuse_attn = self.reflash_attn(reuse_attn)
-            refined_lms = window_partition(refined_lms, self.ws)
-            refined_lms = rearrange(refined_lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
+            reuse_attn = self.reflash_attn(reuse_attn)  # [b, h, m, n]
+            refined_lms = window_partition(refined_lms, self.ws)  # [b, wh, ww, c]
+            refined_lms = self.proj_v(refined_lms)
+            refined_lms = rearrange(refined_lms, "b h w (nhead c) -> b nhead (h w) c", nhead=self.nhead)
 
-            refined_lms = torch.einsum(
-                "b h m n, b h d m -> b h d n", reuse_attn, refined_lms
-            )  # (lms x pan) x lms
+            # refined_lms = torch.einsum(
+            #     "b h n m, b h n c -> b h d m", reuse_attn, refined_lms
+            # )  # (lms x pan) x lms
+            refined_lms = reuse_attn @ refined_lms
             refined_lms = rearrange(
                 refined_lms,
-                "b nhead c (h w) -> b (nhead c) h w",
+                "b nhead (wh ww) c -> b (nhead c) wh ww",
                 nhead=self.nhead,
-                h=self.ws,
-                w=self.ws,
+                wh=self.ws,
+                ww=self.ws,
             )
             refined_lms = window_reverse(refined_lms, self.ws, h, w)
             
-            
-        # reflashed_attn = reuse_attn
+        reflashed_attn = reuse_attn
         reflashed_out = refined_lms
         refined_lms = self.res_block(refined_lms)
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
@@ -296,19 +317,22 @@ class PreHp(nn.Module):
 
 
 class HpBranch(nn.Module):
-    def __init__(self, attn_dim, hp_dim) -> None:
+    def __init__(self, attn_dim, hp_dim, n=2) -> None:
         super().__init__()
         self.attn_hp_conv = nn.Conv2d(attn_dim, hp_dim, 1)
         self.to_hp_dim = nn.Conv2d(hp_dim * 2, hp_dim, 1)
 
-        self.res_block = Residual(
-            nn.Sequential(
-                nn.Conv2d(hp_dim, hp_dim, 3, 1, 1, groups=hp_dim),
-                nn.ReLU(),
-                nn.Conv2d(hp_dim, hp_dim, 1),
-                # nn.BatchNorm2d(hp_dim),
-            )
-        )
+        self.res_block = nn.Sequential(*[Resblock(hp_dim) for _ in range(n)])
+        
+        
+        # Residual(
+        #     nn.Sequential(
+        #         nn.Conv2d(hp_dim, hp_dim, 3, 1, 1, groups=hp_dim),
+        #         nn.ReLU(),
+        #         nn.Conv2d(hp_dim, hp_dim, 1),
+        #         # nn.BatchNorm2d(hp_dim),
+        #     )
+        # )
 
     def forward(self, refined_lms, hp_in):
         attn_hp = self.attn_hp_conv(refined_lms)
@@ -373,7 +397,7 @@ class AttnFuseMain(BaseModel):
         for i in range(self.n_stage):
             reversed_out = self.hp_branch[i](refined_lms, pre_hp)
             # TODO: update reused_attn or not
-            _reused_attn, refined_lms = self.refined_blocks[i](
+            reused_attn, refined_lms = self.refined_blocks[i](
                 reused_attn, refined_lms, reversed_out
             )
 
@@ -405,6 +429,7 @@ class AttnFuseMain(BaseModel):
 
 
 if __name__ == "__main__":
+    import colored_traceback.always
     from fvcore.nn import FlopCountAnalysis, flop_count_table
     from functools import partial
 
@@ -415,29 +440,34 @@ if __name__ == "__main__":
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 8, 16, 16).cuda(1)
-    lms = torch.randn(1, 8, 64, 64).cuda(1)
-    pan = torch.randn(1, 1, 64, 64).cuda(1)
+    ms = torch.randn(1, 8, 16, 16).cuda()
+    lms = torch.randn(1, 8, 64, 64).cuda()
+    pan = torch.randn(1, 1, 64, 64).cuda()
 
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
-        attn_dim=32,
-        hp_dim=32,
+        attn_dim=16,
+        hp_dim=48,
         n_stage=5,
         patch_merge=False,
         patch_size_list=[16, 64, 64],
         scale=4,
         crop_batch_size=32,
-    ).cuda(1)
+    ).cuda()
     net.forward = partial(_only_for_flops_count_forward, net)
 
     # sr = net.val_step(ms, lms, pan)
-    # sr = net._forward_implem(lms, pan)
+    sr = net._forward_implem(lms, pan)
     # print(sr.shape)
+    loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
+    
+    for n, m in net.named_parameters():
+        if m.grad is None:
+            print(f'{n} has no grad')
 
-    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    print(net(lms, pan).shape)
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    # print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
     # Pavia: 102/1
@@ -452,4 +482,7 @@ if __name__ == "__main__":
     # print(num_p/1e6)
 
     # cache = get_local.cache
-    # print(cache)
+    # attns = cache[list(cache.keys())[-1]]
+    # for attn in attns:
+    #     print(attn.shape)
+    # print(len(cache['MSReversibleRefine.forward']))

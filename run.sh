@@ -25,10 +25,10 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-python main.py --proj_name lformer_swin --arch lformer \
+python main.py --proj_name lformer_reduced --arch lformer_R \
 -b 64 --device 'cuda:0' --dataset 'wv3' \
---warm_up_epochs 0 --num_worker 4 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'lformer swin arch (chan=32) on wv3 dataset' \
+--warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 20 --comment 'lformer reduced arch (chan=64) on wv3 dataset' \
 --logger_on --log_metrics \
 
 

@@ -703,9 +703,15 @@ class MambaInjectionBlock(nn.Module):
         # v3: mamba in mamba
         if self.local_shift_size > 0:
             x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))
+            
+        # check cache for mamba blocks
+        if not self.mamba_inner_shared.prev_state_gate: 
+            local_ssm_state = None
+        if not self.mamba.prev_state_gate:
+            global_ssm_state = None
         
         xs_local = window_partition(x, self.window_size)
-        xs_local, local_ssm_states = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
+        xs_local, local_ssm_state = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
         x_local = window_reverse(xs_local, self.window_size, h, w)
         
         if self.local_shift_size > 0:
@@ -723,7 +729,7 @@ class MambaInjectionBlock(nn.Module):
         
         # local ssm state to global ssm state
         if self.mamba_inner_shared.prev_state_gate:
-            global_ssm_state = reduce(local_ssm_states, '(b w) d n -> b d n', 'mean', b=b)
+            global_ssm_state = reduce(local_ssm_state, '(b w) d n -> b d n', 'mean', b=b)
             if prev_global_state is not None:
                 global_ssm_state = global_ssm_state + prev_global_state
         else: global_ssm_state = None
@@ -744,12 +750,7 @@ class MambaInjectionBlock(nn.Module):
         # x = x * (1 + gamma / gamma.norm()) + beta / beta.norm()
         # x = self.out_conv(self.act(self.norm(x))) + x
         
-        if not self.mamba_inner_shared.prev_state_gate: 
-            local_ssm_states = None
-        if not self.mamba.prev_state_gate:
-            global_ssm_state = None
-        
-        return x, local_ssm_states, local_ssm_states
+        return x, local_ssm_state, global_ssm_state
 
 
 class UniSequential(nn.Module):
@@ -797,7 +798,7 @@ class UniSequential(nn.Module):
         
         outp = self.mods[0](outp)
         for mod in self.mods[1:]:
-            outp, local_state, global_state = mod(outp, cond, c_shuffle, *[prev_states + skip_states])  # in_block states share
+            outp, local_state, global_state = mod(outp, cond, c_shuffle, *(prev_states + skip_states))  # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
     
@@ -1013,7 +1014,6 @@ class ConditionalNAFNet(BaseModel):
         ssm_convs=[],
         ssm_chan_upscale=[],
         ssm_d_states=[],
-        use_prev_ssm_state=True,
         window_sizes=[],
         # model settings
         upscale=1,
@@ -1028,6 +1028,9 @@ class ConditionalNAFNet(BaseModel):
         self.if_abs_pos = if_abs_pos
         self.rope = if_rope
         self.pt_img_size = pt_img_size
+        
+        # # TODO: only support global ssm state has the same dimension
+        # assert len(set(list(zip(ssm_d_states))[-1])) == 1, 'only support global ssm state has the same dimension'
 
         if if_abs_pos:
             self.abs_pos = nn.Parameter(torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True)
@@ -1102,7 +1105,7 @@ class ConditionalNAFNet(BaseModel):
                             window_size=window_sizes[enc_i],
                             d_states=ssm_d_states[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_chan=chan if i != 0 else None,
+                            prev_state_chan=prev_chan if enc_i != 0 else None,
                             # prev_state_gate=use_prev_ssm_state if i != 0 else False
                         )
                         for i in range(num)
@@ -1153,6 +1156,7 @@ class ConditionalNAFNet(BaseModel):
                             d_states=ssm_d_states[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_chan=prev_chan,
+                            skip_state_chan=chan,
                             # prev_state_gate=use_prev_ssm_state
                         )
                         for i in range(num)
@@ -1260,7 +1264,7 @@ class ConditionalNAFNet(BaseModel):
             x = up(x)
             x = torch.cat([x, enc_skip], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
-            x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, enc_state_skip, states)
+            x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, states, enc_state_skip)
             
         x = rearrange(x, 'b h w c -> b c h w')
         for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
@@ -1346,7 +1350,6 @@ if __name__ == "__main__":
         if_rope=False,
         if_abs_pos=False,
         patch_merge=True,
-        use_prev_ssm_state=True
     ).to(device)
     
     from model.module.vmamba_module_v3 import selective_scan_flop_jit
@@ -1366,7 +1369,7 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     # net.eval()
-    for img_sz in [64]:
+    for img_sz in [512]:
         scale = 4
         img_size = 64 // scale
         chan = 8

@@ -237,6 +237,8 @@ class FirstAttn(nn.Module):
 
         q, k, v = map(lambda x: self.rearrange(window_partition(x, self.ws)), (q, k, v))
         # q, k, v = map(lambda x: F.normalize(x, dim=-1), (q, k, v))
+        
+        k = F.normalize(k, dim=-1)
 
         attn = torch.einsum("b h d m, b h d n -> b h m n", q, k)  # lms x pan
         attn = self.attn_drop(attn)
@@ -284,7 +286,8 @@ class MSReversibleRefine(nn.Module):
             )
         )
         self.fuse_conv = nn.Conv2d(dim + hp_dim, dim, 3, 1, 1)
-        self.reflash_attn = ReflashAttn(nhead=nhead)
+        if not first_stage:
+            self.reflash_attn = ReflashAttn(nhead=nhead)
 
         self.nhead = nhead
         self.first_stage = first_stage
@@ -393,7 +396,7 @@ class HpBranch(nn.Module):
         return hp_out
 
 
-@register_model("lformer")
+@register_model("lformer_R")
 # buggy: training unstable
 class AttnFuseMain(BaseModel):
     def __init__(
@@ -415,7 +418,7 @@ class AttnFuseMain(BaseModel):
 
         if attn_type == 'R' and r_op is None:
             # TODO: input img_size?
-            r_op = nn.AdaptiveAvgPool2d((32, 32))
+            r_op = nn.AdaptiveAvgPool2d((16, 16))
             
         self.attn = FirstAttn(pan_dim, lms_dim, attn_dim, first_layer=False, attn_type=attn_type, r_op=r_op)
         self.pre_hp = PreHp(pan_dim, lms_dim, hp_dim)
@@ -494,32 +497,41 @@ if __name__ == "__main__":
     # w/o smrb ahead qkv
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
+    
+    torch.cuda.set_device(0)
 
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
 
-    ms = torch.randn(1, 8, 16, 16).cuda(1)
-    lms = torch.randn(1, 8, 64, 64).cuda(1)
-    pan = torch.randn(1, 1, 64, 64).cuda(1)
-
+    ms = torch.randn(1, 8, 16, 16).cuda()
+    lms = torch.randn(1, 8, 64, 64).cuda()
+    pan = torch.randn(1, 1, 64, 64).cuda()
+    
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
-        attn_dim=32,
-        hp_dim=32,
+        attn_dim=64,
+        hp_dim=64,
         n_stage=5,
         patch_merge=False,
         patch_size_list=[16, 64, 64],
         scale=4,
         crop_batch_size=32,
-    ).cuda(1)
+        attn_type='R',
+        r_op=nn.AdaptiveAvgPool2d((16, 16))
+    ).cuda()
     net.forward = partial(_only_for_flops_count_forward, net)
 
     # sr = net.val_step(ms, lms, pan)
-    sr = net._forward_implem(lms, pan)
-    print(sr.shape)
+    # sr = net._forward_implem(lms, pan)
+    # loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
+    # print(sr.shape)
+    
+    # for n, m in net.named_parameters():
+    #     if m.grad is None:
+    #         print(f'{n} has no grad')
 
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN

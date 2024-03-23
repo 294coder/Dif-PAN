@@ -809,7 +809,9 @@ class SS2D(nn.Module):
                 for _ in range(k_group)
             ]
             self.ssm_state_weight1 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj1], dim=0))
-            self.ssm_state_weight2 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj2], dim=0))
+            if skip_state_chan is not None:
+                self.ssm_state_weight2 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj2], dim=0))
+            else: self.ssm_state_weight2 = None
             self.xs_gate_weight = nn.Parameter(torch.stack([t.weight for t in xs_gate], dim=0))
             self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
             # bias here
@@ -990,7 +992,6 @@ class SS2D(nn.Module):
                        # prev_state ===============
                        prev_state:torch.Tensor=None,
                        skip_state:torch.Tensor=None
-                       
                        ):
         x_with_states = cross_selective_scan(
             x, self.x_proj_weight, None, self.dt_projs_weight, self.dt_projs_bias,
@@ -1005,13 +1006,16 @@ class SS2D(nn.Module):
             prev_state=prev_state,
             skip_state=skip_state,
             prev_sta_proj_w=self.ssm_state_weight1,
-            skip_sta_proj_2=self.ssm_state_weight2,
+            skip_sta_proj_w=self.ssm_state_weight2,
             xs_gate_weight=self.xs_gate_weight,
             ssm_state_ratio=self.ssm_gate_ratio,
         )
         return x_with_states
     
-    def forward(self, x: torch.Tensor, prev_states: torch.Tensor=None, **kwargs):
+    def forward(self,
+                x: torch.Tensor,
+                prev_states: torch.Tensor=None,
+                skip_states:torch.Tensor=None):
         with_dconv = (self.d_conv > 1)
         x = self.in_proj(x)
         if not self.disable_z:
@@ -1023,7 +1027,7 @@ class SS2D(nn.Module):
             x = self.conv2d(x) # (b, d, h, w)
         x = self.act(x)
         
-        y, ssm_state = self.forward_core(x, prev_states=prev_states)
+        y, ssm_state = self.forward_core(x, prev_state=prev_states, skip_state=skip_states)
 
         if not self.disable_z:
             y = y * z

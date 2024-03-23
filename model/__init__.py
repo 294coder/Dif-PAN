@@ -49,6 +49,7 @@ from model.base_model import MODELS
 # from model.dcformer_dissucss_multisource_proj import DCFormerMWSAMultiSourceProj
 
 from model.LFormer import AttnFuseMain
+from model.lformer_reduced_swin_attn import AttnFuseMain
 # from model.lformer_ablation.LFormer_ablation_skip_attn import AttnFuseMain
 
 from model.panMamba import ConditionalNAFNet

@@ -41,9 +41,7 @@ def get_args():
 
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
-    parser.add_argument(
-        "--sub_arch", default="none", help="panformer sub-architecture name"
-    )
+    parser.add_argument("--sub_arch", default="none", help="panformer sub-architecture name")
 
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
@@ -52,30 +50,7 @@ def get_args():
     parser.add_argument("-e", "--epochs", type=int, default=500)
     parser.add_argument("--val_n_epoch", type=int, default=30)
     parser.add_argument("--warm_up_epochs", type=int, default=80)
-    parser.add_argument(
-        "-l",
-        "--loss",
-        type=str,
-        default="mse",
-        choices=[
-            "mse",
-            "l1",
-            "hybrid",
-            "smoothl1",
-            "l1ssim",
-            "charbssim",
-            "ssimsf",
-            "ssimmci",
-            "mcgmci",
-            "ssimrmi_fuse",
-            " pia_fuse",
-            "u2fusion",
-            " swinfusion",
-            "hpm",
-            "none",
-            "None",
-        ],
-    )
+    parser.add_argument( "-l", "--loss", type=str, default="mse", choices=[ "mse", "l1", "hybrid", "smoothl1", "l1ssim", "charbssim", "ssimsf", "ssimmci", "mcgmci", "ssimrmi_fuse", "pia_fuse", "u2fusion", "swinfusion", "hpm", "none", "None",],)
     parser.add_argument("--grad_accum_ep", type=int, default=None)
     parser.add_argument("--save_every_eval", action="store_true", default=False)
 
@@ -427,4 +402,5 @@ if __name__ == "__main__":
         main(args.device, args)
     else:
         print('SPAWN: using multiple gpus')
+        # TODO: resort to accelerator method, to avoid multi-processing dataloader using more RAM
         mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
