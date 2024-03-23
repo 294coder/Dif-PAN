@@ -603,12 +603,14 @@ class MambaInjectionBlock(nn.Module):
         local_shift_size=0,
         prev_state_chan=None,
         skip_state_chan=None,
+        local_state_to_global=False,
         **mamba_kwargs,
     ):
         super().__init__()
         self.inner_chan = inner_chan
         self.window_size = window_size
         self.local_shift_size = local_shift_size
+        self.local_state_to_global = local_state_to_global
         
         self.intro_conv = nn.Sequential(
             nn.Conv2d(in_chan, inner_chan, 1),
@@ -636,8 +638,8 @@ class MambaInjectionBlock(nn.Module):
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
             # prev_state_gate=False,  # may use much gpu mem
-            prev_state_chan=None,
-            skip_state_chan=None,
+            prev_state_chan=prev_state_chan,
+            skip_state_chan=skip_state_chan,
             **mamba_kwargs,
         )
 
@@ -655,8 +657,8 @@ class MambaInjectionBlock(nn.Module):
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
-            prev_state_chan=prev_state_chan,
-            skip_state_chan=skip_state_chan,
+            prev_state_chan=None,
+            skip_state_chan=None,
             # prev_state_gate=prev_state_gate,
             **mamba_kwargs,
         )
@@ -706,9 +708,14 @@ class MambaInjectionBlock(nn.Module):
             
         # check cache for mamba blocks
         if not self.mamba_inner_shared.prev_state_gate: 
-            local_ssm_state = None
+            prev_local_state = None
         if not self.mamba.prev_state_gate:
-            global_ssm_state = None
+            prev_global_state = None
+        
+        # if prev_global_state is not None:
+        #     print(f'input global shape: {prev_global_state.shape}')
+        # else:
+        #     print('no global ssm state')
         
         xs_local = window_partition(x, self.window_size)
         xs_local, local_ssm_state = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
@@ -728,13 +735,14 @@ class MambaInjectionBlock(nn.Module):
         # enhance v2
         
         # local ssm state to global ssm state
-        if self.mamba_inner_shared.prev_state_gate:
-            global_ssm_state = reduce(local_ssm_state, '(b w) d n -> b d n', 'mean', b=b)
+        if self.local_state_to_global and self.mamba.prev_state_gate:
+            local_to_global_sta = reduce(local_ssm_state, '(b w) d n -> b d n', 'mean', b=b)
             if prev_global_state is not None:
-                global_ssm_state = global_ssm_state + prev_global_state
-        else: global_ssm_state = None
+                prev_global_state = local_to_global_sta + prev_global_state
+            else:
+                prev_global_state = local_to_global_sta
             
-        x, global_ssm_state = self.mamba(x_local * self.enhanced_factor + x, global_ssm_state, skip_global_state)
+        x, global_ssm_state = self.mamba(x_local * self.enhanced_factor + x, prev_global_state, skip_global_state)
         
         if c_shuffle:
             c_perm = torch.argsort(c_perm)
@@ -781,7 +789,8 @@ class UniSequential(nn.Module):
                          states=[None, None]):
         outp = feat
         local_state, global_state = states[0], states[1]
-        for mod in self.mods:
+        for i, mod in enumerate(self.mods):
+            # print(f'==encoder mods {i}')
             outp, local_state, global_state = mod(outp, cond, c_shuffle, local_state, global_state) # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
@@ -797,7 +806,8 @@ class UniSequential(nn.Module):
         # prev_local_state, prev_global_state = prev_states[0], prev_states[1]
         
         outp = self.mods[0](outp)
-        for mod in self.mods[1:]:
+        for i, mod in enumerate(self.mods[1:]):
+            # print(f'==decoder mods {i}')
             outp, local_state, global_state = mod(outp, cond, c_shuffle, *(prev_states + skip_states))  # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
         return outp, (local_state, global_state)
@@ -1012,6 +1022,7 @@ class ConditionalNAFNet(BaseModel):
         middle_blk_nums=2,
         ssm_dec_blk_nums=[],
         ssm_convs=[],
+        ssm_ratios=[],
         ssm_chan_upscale=[],
         ssm_d_states=[],
         window_sizes=[],
@@ -1094,7 +1105,21 @@ class ConditionalNAFNet(BaseModel):
             pt_img_size //= 2
             
         # LEMM layer
+        print('=== init SSM encoder ===')
         for enc_i, num in enumerate(ssm_enc_blk_nums):
+            def prev_state_chan_fn(i):
+                if enc_i == 0:
+                    if i == 0: prev_state_chan = None
+                    else: prev_state_chan = chan * ssm_ratios[enc_i]
+                else:
+                    if i == 0: prev_state_chan = prev_ssm_chan
+                    else: prev_state_chan = chan * ssm_ratios[enc_i]
+                # print(f'prev_state_chan={prev_state_chan * 4 if prev_state_chan is not None else prev_state_chan}')  # K=4
+                return prev_state_chan
+            
+            
+            # prev_state_chan_fn = (lambda i: None if i == 0 else chan * ssm_ratios[enc_i]) if enc_i == 0 else \
+            #                      (lambda i: prev_ssm_chan if i == 0 else chan * ssm_ratios[enc_i])
             self.lemm_encoders.append(
                 UniSequential(
                     *[
@@ -1104,21 +1129,24 @@ class ConditionalNAFNet(BaseModel):
                             ssm_conv=ssm_convs[enc_i],
                             window_size=window_sizes[enc_i],
                             d_states=ssm_d_states[enc_i],
+                            ssm_ratio=ssm_ratios[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_chan=prev_chan if enc_i != 0 else None,
-                            # prev_state_gate=use_prev_ssm_state if i != 0 else False
+                            prev_state_chan=prev_state_chan_fn(i),
                         )
                         for i in range(num)
                     ]
                 )
             )
             self.lemm_downs.append(down(chan, down_type='conv', permute=True))
-            prev_chan = chan
+            prev_ssm_chan = chan * ssm_ratios[enc_i]
             chan = chan * ssm_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
+            # print('==='*10)
 
         ## middel layer
+        print('=== init SSM middle blks ===')
+        prev_state_chan_fn = lambda i: prev_ssm_chan if i == 0 else chan * ssm_ratios[-1]
         self.middle_blks = UniSequential(
             *[
                 MambaInjectionBlock(
@@ -1127,20 +1155,25 @@ class ConditionalNAFNet(BaseModel):
                     ssm_conv=ssm_convs[-1],
                     window_size=window_sizes[-1],
                     d_states=ssm_d_states[-1],
+                    ssm_ratio=ssm_ratios[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
-                    prev_state_chan=prev_chan,
+                    prev_state_chan=prev_state_chan_fn(i),
                     # prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
                 for i in range(num)
             ]
         )
         n_prev_blks += middle_blk_nums
+        prev_ssm_chan = chan * ssm_ratios[-1]
+        # print('==='*10)
+        
 
         ## decoder
         # LEMM layer
+        print('=== init SSM decoder ===')
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
             self.lemm_ups.append(up(chan, permute=True))
-            prev_chan = chan
+            prev_chan_fn = lambda i: prev_ssm_chan #if i == 0 else chan * ssm_ratios[::-1][dec_i]
             chan = chan // ssm_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
 
@@ -1154,16 +1187,18 @@ class ConditionalNAFNet(BaseModel):
                             ssm_conv=ssm_convs[::-1][dec_i],
                             window_size=window_sizes[::-1][dec_i],
                             d_states=ssm_d_states[::-1][dec_i],
+                            ssm_ratio=ssm_ratios[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_chan=prev_chan,
-                            skip_state_chan=chan,
-                            # prev_state_gate=use_prev_ssm_state
+                            prev_state_chan=prev_chan_fn(i),  
+                            skip_state_chan=chan,  # assert skip_state_chan == chan
                         )
                         for i in range(num)
                     ],
                 )
             )
             n_prev_blks += num
+            prev_ssm_chan = chan * ssm_ratios[-1]
+            # print('==='*10)
             
         # NAF layer
         for dec_i, num in enumerate(naf_dec_blk_nums):
@@ -1183,8 +1218,8 @@ class ConditionalNAFNet(BaseModel):
         self.patch_merge = patch_merge
 
         # init
-        print("============= init network =================")
-        self.apply(self._init_weights)
+        # print("============= init network =================")
+        # self.apply(self._init_weights)
 
     def _init_weights(self, m: nn.Module):
         # print(type(m))
@@ -1249,7 +1284,8 @@ class ConditionalNAFNet(BaseModel):
         encs_states = []
         states = [None, None]
         x = rearrange(x, 'b c h w -> b h w c')
-        for encoder, down in zip(self.lemm_encoders, self.lemm_downs):
+        for i, (encoder, down) in enumerate(zip(self.lemm_encoders, self.lemm_downs)):
+            # print(f'unisequenctial encoder {i}')
             # x = rope(x)
             # TODO: input previous state
             x, states = encoder.LEMM_enc_forward(x, cond, c_shuffle, states)
@@ -1258,9 +1294,11 @@ class ConditionalNAFNet(BaseModel):
             x = down(x)
 
         # x = self.middle_rope(x)
+        # print('unisequenctial middle layer')
         x, states = self.middle_blks.LEMM_enc_forward(x, cond, c_shuffle, states)
 
-        for decoder, up, enc_skip, enc_state_skip in zip(self.lemm_decoders, self.lemm_ups, lemm_encs[::-1], encs_states[::-1]):
+        for i, (decoder, up, enc_skip, enc_state_skip) in enumerate(zip(self.lemm_decoders, self.lemm_ups, lemm_encs[::-1], encs_states[::-1])):
+            # print(f'unisequenctial decoder {i}')
             x = up(x)
             x = torch.cat([x, enc_skip], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
@@ -1323,7 +1361,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:0"
+    device = "cuda:1"
     torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
@@ -1332,16 +1370,17 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=32,
+        width=16,
         middle_blk_nums=2,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[1]*3,
-        ssm_dec_blk_nums=[1]*3,
-        ssm_chan_upscale=[2]*3,
+        ssm_enc_blk_nums=[1, 1, 2],
+        ssm_dec_blk_nums=[1, 1, 2],
+        ssm_chan_upscale=[2, 2, 2],
+        ssm_ratios=[2,2,2],
         window_sizes=[8,8,8],
         ssm_d_states=[[32, 32], [32, 32], [32, 32]],
         ssm_convs=[[5, 11], [5, 11], [5, 11]],
@@ -1369,15 +1408,15 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     # net.eval()
-    for img_sz in [512]:
+    for img_sz in [1024]:
         scale = 4
-        img_size = 64 // scale
+        gt_img_sz = img_sz // scale
         chan = 8
         pan_chan = 1
-        ms = torch.randn(1, chan, img_size, img_size).to(device)
-        img = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
-        cond = torch.randn(1, pan_chan, img_size * scale, img_size * scale).to(device)
-        gt = torch.randn(1, chan, img_size * scale, img_size * scale).to(device)
+        ms = torch.randn(1, chan, gt_img_sz, gt_img_sz).to(device)
+        img = torch.randn(1, chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
+        cond = torch.randn(1, pan_chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
+        gt = torch.randn(1, chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
 
         # net = torch.compile(net)
 
@@ -1386,9 +1425,9 @@ if __name__ == "__main__":
         loss.backward()
         print(loss)
         # find unused params
-        for n, p in net.named_parameters():
-            if p.grad is None:
-                print(n, "has no grad")
+        # for n, p in net.named_parameters():
+        #     if p.grad is None:
+        #         print(n, "has no grad")
 
         # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
 

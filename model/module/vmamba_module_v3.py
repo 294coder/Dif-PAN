@@ -549,31 +549,34 @@ def cross_selective_scan(
         
         # previous states cache
         if skip_state is not None and skip_sta_proj_w is not None:
-            skip_state = F.conv1d(skip_state.view(B, -1, skip_state.shape[-1]), skip_sta_proj_w.view(-1, D, 1),   # [B, D, d_state]
-                                   bias=skip_sta_proj_bias.view(-1) if skip_sta_proj_bias is not None else None,
-                                   groups=K)
-        
+            skip_state = F.conv1d(skip_state,   # [b, K*D, d_state]
+                                  skip_sta_proj_w,   # [K*D, D, 1]
+                                  bias=skip_sta_proj_bias.view(-1) if skip_sta_proj_bias is not None else None,
+                                  groups=K)
+    
         if prev_state is not None and prev_sta_proj_w is not None:
             # print('use previous states')
             
             # Ahdt = A_h * prev_states: (conv1d([B, k*D, N], [k*D, D, 1])) -> [B, k*D, N]
             # Bxs = B_x * xs: (conv1d([B, k*D, L], [k*D, N, 1])) -> [B, k*N, L]
             
-            prev_state = F.conv1d(prev_state.view(B, -1, prev_state.shape[-1]),  # [B, D, d_state]
-                                   prev_sta_proj_w.view(-1, D, 1),
-                                   bias=prev_sta_proj_bias.view(-1) if prev_sta_proj_bias is not None else None, 
-                                   groups=K)
+            prev_state = F.conv1d(prev_state,  # [B, D, d_state]
+                                  prev_sta_proj_w,
+                                  bias=prev_sta_proj_bias.view(-1) if prev_sta_proj_bias is not None else None, 
+                                  groups=K)
             
             if skip_state is not None:
+                # skip: [1, 1024, 32]
+                # prev: [1, 1024, 32]
                 prev_state = prev_state + skip_state
-                
-            gating = F.conv1d(xs.view(B, -1, L), 
-                                xs_gate_weight.view(-1, D, 1), 
-                                bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), 
-                                groups=K)
+            
+            # [B, K*D, L] @ [K*N, D, 1] -> [B, K*N, L]
+            gating = F.conv1d(xs.view(B, -1, L), xs_gate_weight,
+                              bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), 
+                              groups=K)
             upd = torch.einsum('bkdn,bknl->bkdl', prev_state.view(B, K, -1, N), gating.view(B, K, -1, L))
             xs = xs + upd * ssm_state_ratio
-                # print('----using gating ratio----')
+            # print('----using gating ratio----')
         
     else:
         # TODO: gating previous states cache here
@@ -793,27 +796,38 @@ class SS2D(nn.Module):
         if prev_state_chan is not None:
             # FIXME: may raise error when ssm_ratio * d_state is not equal to
             # the previous layer's
-            ssm_state_proj1 = [
-                nn.Linear(d_inner, prev_state_chan, bias=False, **factory_kwargs)
-                for _ in range(k_group)
-            ]
-            if skip_state_chan is not None:
-                ssm_state_proj2 = [
-                nn.Linear(d_inner, d_inner, bias=False, **factory_kwargs)
-                for _ in range(k_group)
-            ]
             
-            # TODO: dt, A, B, C?
-            xs_gate = [
-                nn.Linear(d_inner, d_state, bias=False, **factory_kwargs)
-                for _ in range(k_group)
-            ]
-            self.ssm_state_weight1 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj1], dim=0))
+            # ssm_state_proj1 = [
+            #     nn.Linear(d_inner, prev_state_chan, bias=False, **factory_kwargs)
+            #     for _ in range(k_group)
+            # ]
+            # if skip_state_chan is not None:
+            #     ssm_state_proj2 = [
+            #     nn.Linear(d_inner, d_inner, bias=False, **factory_kwargs)
+            #     for _ in range(k_group)
+            # ]
+                
+            # xs_gate = [
+            #     nn.Linear(d_inner, d_state, bias=False, **factory_kwargs)
+            #     for _ in range(k_group)
+            # ]
+            # self.ssm_state_weight1 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj1], dim=0))
+            # if skip_state_chan is not None:
+            #     self.ssm_state_weight2 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj2], dim=0))
+            # else: self.ssm_state_weight2 = None
+            # self.xs_gate_weight = nn.Parameter(torch.stack([t.weight for t in xs_gate], dim=0))
+            # self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
+            
+            # print(f'SS2D: got prev_state_chan: {prev_state_chan * 4}')
+            self.ssm_state_weight1 = nn.Parameter(torch.randn((k_group*d_inner, prev_state_chan, 1)))
             if skip_state_chan is not None:
-                self.ssm_state_weight2 = nn.Parameter(torch.stack([t.weight for t in ssm_state_proj2], dim=0))
-            else: self.ssm_state_weight2 = None
-            self.xs_gate_weight = nn.Parameter(torch.stack([t.weight for t in xs_gate], dim=0))
+                self.ssm_state_weight2 = nn.Parameter(torch.randn((k_group*d_inner, d_inner, 1)))
+            else:
+                self.ssm_state_weight2 = None
+            self.xs_gate_weight = nn.Parameter(torch.zeros((k_group*d_state, d_inner, 1)))
             self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
+            
+            
             # bias here
             
             # del self.ssm_state_proj, self.xs_gate
@@ -1217,6 +1231,7 @@ class VSSBlock(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.post_norm = post_norm
         self.prev_state_gate = prev_state_chan is not None
+        self.ss2d_d_inner = int(ssm_ratio * hidden_dim)
 
         if self.ssm_branch:
             self.norm = norm_layer(hidden_dim)

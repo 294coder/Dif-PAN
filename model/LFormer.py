@@ -211,8 +211,8 @@ class FirstAttn(nn.Module):
         q, k, v= map(lambda x: rearrange(x, 'b wh ww (head c) -> b head (wh ww) c', head=self.nheads), 
                      [q, k, v])
         
-        # Check: key norm may help? normalize on hw dimension.
-        k = F.normalize(k, dim=-2)
+        # Check: key norm may help? normalize on hw dimension. (fxxk: no help)  best SAM: 2.8858
+        # k = F.normalize(k, dim=-2)
         
         attn = q @ k.transpose(-2, -1)  # [b, head, n, c] @ [b, head, c, m]
         attn = self.attn_drop(attn)
@@ -444,6 +444,7 @@ if __name__ == "__main__":
     lms = torch.randn(1, 8, 64, 64).cuda()
     pan = torch.randn(1, 1, 64, 64).cuda()
 
+    #  0.903M   3.976G     
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
@@ -460,13 +461,13 @@ if __name__ == "__main__":
     # sr = net.val_step(ms, lms, pan)
     sr = net._forward_implem(lms, pan)
     # print(sr.shape)
-    loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
+    # loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
     
-    for n, m in net.named_parameters():
-        if m.grad is None:
-            print(f'{n} has no grad')
+    # for n, m in net.named_parameters():
+    #     if m.grad is None:
+    #         print(f'{n} has no grad')
 
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
