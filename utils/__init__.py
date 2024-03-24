@@ -32,7 +32,6 @@ from utils.misc import (
     is_main_process,
     print_args,
     to_numpy,
-    Identity,
     merge_args_namespace,
     generate_id,
     set_all_seed,
@@ -65,6 +64,7 @@ from utils.visualize import viz_batch, res_image, get_spectral_image_ready
 from utils.inference_helper_func import ref_for_loop, unref_for_loop
 from utils.loss_utils import get_loss, accum_loss_dict, ave_ep_loss, ave_multi_rank_dict
 from utils.save_checker import BestMetricSaveChecker
+from utils.train_utils import get_fusion_dataset
 
 
 config_load = yaml_load

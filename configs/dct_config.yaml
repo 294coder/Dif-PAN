@@ -5,7 +5,7 @@ optimizer:
 
 lr_scheduler:
   name: "multi_step"
-  milestones: [300, 1600]
+  milestones: [200, 1600]
   gamma: 0.1
   # name: 'identity'
 
@@ -30,36 +30,20 @@ path:
   cave_x4_train_path: "/volsparse1/dataset/HISR/cave_x4/train_cave(with_up)x4.h5"
   cave_x4_val_path: "/volsparse1/dataset/HISR/cave_x4/test_cave(with_up)x4.h5"
 
-network_configs:
-  # lformer_ablation:
-  #   pan_dim: 3
-  #   lms_dim: 31
-  #   attn_dim: 64
-  #   hp_dim: 64
-  #   n_stage: 5
-  lformer:
-    pan_dim: 3
-    lms_dim: 31 #102 #128
-    attn_dim: 64
-    hp_dim: 64
-    n_stage: 5
-    patch_merge: yes
-    crop_batch_size: 64
-    patch_size_list: [16, 64, 64]
-    scale: 4
+  cave_x8_train_path: "/volsparse1/dataset/HISR/cave_x8/train_cave(with_up)x8_rgb_16.h5"
+  cave_x8_val_path: "/volsparse1/dataset/HISR/cave_x8/test_cave(with_up)x8_rgb.h5"
 
-  lformer_ablation_skip:
-    pan_dim: 1
-    lms_dim: 8 #102 #128
-    attn_dim: 32
-    hp_dim: 32
-    n_stage: 5
-    patch_merge: yes
-    crop_batch_size: 32
-    patch_size_list: [16, 64, 64]
-    scale: 4
+  harvard_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5"
+  harvard_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+
+  harvard_x8_train_path: "/volsparse1/dataset/HISR/harvard_x8/train_harvard(with_up)x8_rgb.h5"
+  harvard_x8_val_path: "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
+
+network_configs:
+  n_colors: 31
+  upscale_factor: 8
 
 logger_config:
   base_path: ./log_file/
-  name: lformer
+  name: reciprocal_transformer
   file_mode: w

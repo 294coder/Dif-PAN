@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Optional, Union, Sequence, Iterable
+import signal
 
 import beartype
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch import NoneType, nn
 from torchvision.utils import make_grid
 
-from utils.misc import _NameSpace, is_main_process
+from utils.misc import NameSpace, is_main_process
 from utils.visualize import get_spectral_image_ready
 
 import time
@@ -69,7 +70,7 @@ def ep_loss_dict2str(
 
 class TrainStatusLogger(object):
     def __init__(
-        self, id="None", path="./train_status/status.pkl", resume=False, args=None
+        self, id="None", path="./train_status/status.pt", resume=False, args=None
     ):
         """
         track training status as a context manager
@@ -105,6 +106,14 @@ class TrainStatusLogger(object):
                     # print('warning: argument @id is not equal to the resume id which will be ignored')
             else:
                 self.status_all.append(self.status)
+                
+        # ======= handle the KeyboardInterrupt signal =======
+        def handler(*args):
+            print('catch signal: KeyboardInterrupt')
+            print('EXITTING...')
+            raise KeyboardInterrupt
+        
+        signal.signal(signal.SIGINT, handler)
 
     @staticmethod
     def _check_status_legal(status):
@@ -112,16 +121,18 @@ class TrainStatusLogger(object):
 
     def load_train_status(self):
         if os.path.getsize(self.path) > 0:
-            with open(self.path, "rb") as f:
-                l = pickle.load(f)
+            # with open(self.path, "rb") as f:
+            #     l = pickle.load(f)
+            l = torch.load(self.path)
         else:
             raise EOFError("file is empty, you should delete it")
         print("load previous train status")
         return l
 
     def save_train_status(self):
-        with open(self.path, "wb") as f:
-            pickle.dump(self.status_all, f)
+        # with open(self.path, "wb") as f:
+        #     pickle.dump(self.status_all, f)
+        torch.save(self.status_all, self.path)
         print("save all train status")
 
     def update_train_status(self, status):
@@ -149,7 +160,7 @@ class TrainStatusLogger(object):
     def print_status_by_id(self, id):
         s = self._find_id(id)
         for k, v in s:
-            if isinstance(v, _NameSpace):
+            if isinstance(v, NameSpace):
                 print(v)
             else:
                 print(f"{k}: {v}")
@@ -188,9 +199,10 @@ class TrainStatusLogger(object):
         else:
             print("=" * 20, "Training End", "=" * 20, sep="")
             self.update_train_status("done")
+            
         # only save in main process
-        if is_main_process():
-            self.save_train_status()
+            if is_main_process():
+                self.save_train_status()
 
     def __repr__(self):
         def dict_str(d):

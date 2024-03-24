@@ -52,6 +52,8 @@ from model.LFormer import AttnFuseMain
 from model.lformer_reduced_swin_attn import AttnFuseMain
 # from model.lformer_ablation.LFormer_ablation_skip_attn import AttnFuseMain
 
+from model.reciprocal_transformer import DCT
+
 from model.panMamba import ConditionalNAFNet
 
 # others
