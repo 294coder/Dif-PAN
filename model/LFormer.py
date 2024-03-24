@@ -448,8 +448,8 @@ if __name__ == "__main__":
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
-        attn_dim=16,
-        hp_dim=48,
+        attn_dim=64,
+        hp_dim=64,
         n_stage=5,
         patch_merge=False,
         patch_size_list=[16, 64, 64],

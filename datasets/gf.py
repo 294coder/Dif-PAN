@@ -6,7 +6,11 @@ import numpy as np
 import h5py
 from typing import List, Tuple, Optional
 
-from utils import Identity
+class Identity:
+    def __call__(self, *args):
+        # args is a tuple
+        # return is also a tuple
+        return args
 
 
 class GF2Datasets(data.Dataset):

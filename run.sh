@@ -26,19 +26,19 @@
 
 ## lformer arch
 # python main.py --proj_name lformer_reduced --arch lformer \
-# -b 64 --device 'cuda:1' --dataset 'wv3' \
+# -b 64 --device 'cuda:1' --dataset 'cave_x4' \
 # --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'lformer reduced arch remove k norm on wv3 dataset' \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer reduced arch remove k norm on cave_x4 dataset' \
 # --logger_on --log_metrics \
 
 
 ## panMamba arch
 python main.py --proj_name panMamba --arch panMamba \
--b 128 --device 'cuda:1' --dataset 'wv3' \
+-b 32 --device 'cuda:0' --dataset 'cave_x8' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset' \
 --logger_on --log_metrics \
-# --pretrain --pretrain_id 'n95oo9f6' #--non_load_strict
+--pretrain --pretrain_id 'o5dfjbfk' #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \
@@ -50,7 +50,6 @@ python main.py --proj_name panMamba --arch panMamba \
 # --save_every_eval
 # --non_load_strict
 
-
 ## dcformer_mwsa arch
 # python main.py --proj_name dcformer --arch pmacnet \
 # -b 5 --device 'cuda:1' --dataset 'qb' --log_metrics \
@@ -58,6 +57,13 @@ python main.py --proj_name panMamba --arch panMamba \
 # --loss 'l1ssim' --val_n_epoch 20 --logger_on --ergas_ratio 4 \
 # --comment 'pmacnet on gf2'
 # --pretrain --pretrain_id '1zlhpoze' --non_load_strict
+
+## reciprocal_transformer arch
+# python main.py --proj_name dct --arch dct \
+# -b 8 --device 'cuda:1' --dataset 'cave_x8' \
+# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'reciprocal_transformer on cave_x8 dataset' \
+# --logger_on --log_metrics \
 
 ## fuseformer arch
 #  python main.py --proj_name dcformer --arch fuseformer\

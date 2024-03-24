@@ -6,7 +6,11 @@ import numpy as np
 import h5py
 from typing import List, Tuple, Optional, Union
 
-from utils import Identity
+class Identity:
+    def __call__(self, *args):
+        # args is a tuple
+        # return is also a tuple
+        return args
 
 # WV3_GT_MEAN = [0.13435693, 0.15736127, 0.19913845, 0.17137502, 0.13985378,
 #                0.16384054, 0.21204206, 0.1553395]

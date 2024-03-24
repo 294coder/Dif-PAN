@@ -1,20 +1,34 @@
+from re import X
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange, reduce
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
+from functools import partial
 import math
-import torch.utils.checkpoint as cp
-from timm.layers import DropPath, trunc_normal_
+from torch import einsum
+from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+
 from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange
 
 import sys
-sys.path.insert(1, './')
 
-from model.module.vrwkv import VRWKV_SpatialMix, VRWKV_ChannelMix
+sys.path.append("./")
+sys.path.append("../")
+
+# ATTN_TYPE = "MAMBA_SS2D"
+# assert ATTN_TYPE in ["MAMBA_VIM", "MAMBA_SS2D", "RWKV"]
+# from model.module.rwkv_module import RWKV_ChannelMix_x051a as CMixBlock
+# from model.module.rwkv_module import RWKV_TimeMix_x051a as TMixBlock
+# from model.module.rwkv_module import Block as RKWVBlockCFirst
+
+# from mamba_ssm import Mamba
+from model.module.vmamba_module_v3 import VSSBlock
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 
@@ -444,6 +458,31 @@ def initialize_weights(net_l, scale=1.0):
                 init.constant_(m.weight, 1)
                 init.constant_(m.bias.data, 0.0)
 
+class PatchMerging2D(nn.Module):
+    def __init__(self, dim, out_dim=-1, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.dim = dim
+        self.reduction = nn.Linear(4 * dim, (2 * dim) if out_dim < 0 else out_dim, bias=False)
+        self.norm = norm_layer(4 * dim)
+
+    @staticmethod
+    def _patch_merging_pad(x: torch.Tensor):
+        H, W, _ = x.shape[-3:]
+        if (W % 2 != 0) or (H % 2 != 0):
+            x = F.pad(x, (0, 0, 0, W % 2, 0, H % 2))
+        x0 = x[..., 0::2, 0::2, :]  # ... H/2 W/2 C
+        x1 = x[..., 1::2, 0::2, :]  # ... H/2 W/2 C
+        x2 = x[..., 0::2, 1::2, :]  # ... H/2 W/2 C
+        x3 = x[..., 1::2, 1::2, :]  # ... H/2 W/2 C
+        x = torch.cat([x0, x1, x2, x3], -1)  # ... H/2 W/2 4*C
+        return x
+
+    def forward(self, x):
+        x = self._patch_merging_pad(x)
+        x = self.norm(x)
+        x = self.reduction(x)
+
+        return x
 
 def window_partition(x, window_size):
     """
@@ -478,105 +517,70 @@ def window_reverse(windows, window_size, H, W):
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
     return x
 
+def convs(in_chan, out_chan=None, conv_type='conv3'):
+    if conv_type == 'conv3':
+        return nn.Sequential(
+            nn.Conv2d(in_chan, out_chan, 1),
+            nn.Conv2d(out_chan, out_chan, 3, 1, 1, groups=out_chan),
+        )
+    elif conv_type == 'dwconv3':
+        return nn.Conv2d(in_chan, in_chan, 3, 1, 1, groups=in_chan)
+    elif conv_type == 'conv1':
+        return nn.Conv2d(in_chan, out_chan, 1)
+    else:
+        raise ValueError(f'Unknown conv type {conv_type}')
 
-class Block(nn.Module):
-    def __init__(self, cond_chan, n_embd, n_layer, layer_id, shift_mode='q_shift',
-                 channel_gamma=1/4, shift_pixel=1, drop_path=0., hidden_rate=4,
-                 init_mode='fancy', init_values=None, post_norm=False, key_norm=False,
-                 with_cp=False):
-        super().__init__()
-        self.layer_id = layer_id
-        self.ln1 = nn.LayerNorm(n_embd)
-        self.ln2 = nn.LayerNorm(n_embd)
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        if self.layer_id == 0:
-            self.ln0 = nn.LayerNorm(n_embd)
-
-        self.fuse_convs = nn.ModuleList([nn.Linear(cond_chan, n_embd),
-                                         nn.Linear(n_embd*2, n_embd, bias=False),
-                                         nn.Linear(n_embd, n_embd*2),])
-        self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, shift_mode,
-                                   channel_gamma, shift_pixel, init_mode,
-                                   key_norm=key_norm)
-
-        self.ffn = VRWKV_ChannelMix(n_embd, n_layer, layer_id, shift_mode,
-                                   channel_gamma, shift_pixel, hidden_rate,
-                                   init_mode, key_norm=key_norm)
-        self.layer_scale = (init_values is not None)
-        self.post_norm = post_norm
-        if self.layer_scale:
-            self.gamma1 = nn.Parameter(init_values * torch.ones((n_embd)), requires_grad=True)
-            self.gamma2 = nn.Parameter(init_values * torch.ones((n_embd)), requires_grad=True)
-        self.with_cp = with_cp
-
-    def forward(self, x:torch.Tensor, cond:torch.Tensor, patch_resolution=None):
-        b, n, c = x.shape
-        cond = self.fuse_convs[0](cond)
-        x = torch.cat([x, cond], dim=-1)
-        x = self.fuse_convs[1](x)
-        scale, shift = self.fuse_convs[2](cond).chunk(2, dim=-1)
-        
-        def _inner_forward(x):
-            if self.layer_id == 0:
-                x = self.ln0(x)
-            if self.post_norm:
-                if self.layer_scale:
-                    x = x + self.drop_path(self.gamma1 * self.ln1(self.att(x, patch_resolution)))
-                    x = x * scale + self.drop_path(self.gamma2 * self.ln2(self.ffn(x, patch_resolution))) + shift
-                else:
-                    x = x + self.drop_path(self.ln1(self.att(x, patch_resolution)))
-                    x = x * scale + self.drop_path(self.ln2(self.ffn(x, patch_resolution))) + shift
-            else:
-                if self.layer_scale:
-                    x = x + self.drop_path(self.gamma1 * self.att(self.ln1(x), patch_resolution))
-                    x = x * scale + self.drop_path(self.gamma2 * self.ffn(self.ln2(x), patch_resolution)) + shift
-                else:
-                    x = x + self.drop_path(self.att(self.ln1(x), patch_resolution))
-                    x = x * scale + self.drop_path(self.ffn(self.ln2(x), patch_resolution)) + shift
-            return x
-        if self.with_cp and x.requires_grad:
-            x = cp.checkpoint(_inner_forward, x)
-        else:
-            x = _inner_forward(x)
-        return x
-        
-
-
-class Sequential(nn.Module):
-    def __init__(self, *args):
+class UniSequential(nn.Module):
+    def __init__(self, *args: tuple[nn.Module]):
         super().__init__()
         self.mods = nn.ModuleList(args)
 
     def __getitem__(self, idx):
         return self.mods[idx]
-
-    def reshaping(func):
-        def _reshaping(self, feat, cond, patch_resolution):
-            b, h, w, c = feat.shape
-            cond_chan = cond.shape[1]
-            cond = cond.permute(0, 2, 3, 1).view(b, -1, cond_chan)
-            feat = feat.view(b, -1, c)
-            outp = func(self, feat, cond, patch_resolution)
-            outp = outp.view(b, h, w, -1)
-            return outp
-
-        return _reshaping
     
-    @reshaping
-    def enc_forward(self, feat, cond, patch_resolution):
+    def NAF_enc_forward(self, feat, cond):
         outp = feat
         for mod in self.mods:
-            outp = mod(outp, cond, patch_resolution)
+            outp = mod(outp, cond)
         return outp
-
-    @reshaping
-    def dec_forward(self, feat, cond, patch_resolution):
+        
+    def NAF_dec_forward(self, feat, cond):
         outp = feat
         outp = self.mods[0](outp)
         for mod in self.mods[1:]:
-            outp = mod(outp, cond, patch_resolution)
+            outp = mod(outp, cond)
         return outp
+        
+    def LEMM_enc_forward(self, 
+                         feat, 
+                         cond,
+                         c_shuffle=True,
+                         states=[None, None]):
+        outp = feat
+        local_state, global_state = states[0], states[1]
+        for i, mod in enumerate(self.mods):
+            # print(f'==encoder mods {i}')
+            outp, local_state, global_state = mod(outp, cond, c_shuffle, local_state, global_state) # in_block states share
+            # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
+        return outp, (local_state, global_state)
 
+    def LEMM_dec_forward(self, 
+                         feat, 
+                         cond, 
+                         c_shuffle=True, 
+                         prev_states=[None, None],
+                         skip_states=[None, None]):
+        outp = feat
+        # skip_local_state, skip_global_state = skip_states[0], skip_states[1]
+        # prev_local_state, prev_global_state = prev_states[0], prev_states[1]
+        
+        outp = self.mods[0](outp)
+        for i, mod in enumerate(self.mods[1:]):
+            # print(f'==decoder mods {i}')
+            outp, local_state, global_state = mod(outp, cond, c_shuffle, *(prev_states + skip_states))  # in_block states share
+            # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
+        return outp, (local_state, global_state)
+    
 
 class SquareReLU(nn.Module):
     def __init__(self):
@@ -601,16 +605,14 @@ class SimpleGate(nn.Module):
 
 class NAFBlock(nn.Module):
     def __init__(
-        self, c, time_emb_dim=None, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.0
+        self, c, cond_c, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.0
     ):
         super().__init__()
-        self.mlp = (
-            nn.Sequential(SimpleGate(), nn.Linear(time_emb_dim // 2, c * 4))
-            if time_emb_dim
-            else None
-        )
 
         dw_channel = c * DW_Expand
+        
+        self.cond_intro_conv = nn.Conv2d(cond_c, c, 1)
+        
         self.conv1 = nn.Conv2d(
             in_channels=c,
             out_channels=dw_channel,
@@ -686,22 +688,22 @@ class NAFBlock(nn.Module):
             nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
         )
 
-        self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
-        self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        # self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        # self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
 
     def time_forward(self, time, mlp):
         time_emb = mlp(time)
         time_emb = rearrange(time_emb, "b c -> b c 1 1")
         return time_emb.chunk(4, dim=1)
 
-    def forward(self, x):
-        inp, time = x
-        shift_att, scale_att, shift_ffn, scale_ffn = self.time_forward(time, self.mlp)
-
-        x = inp
+    def forward(self, x, cond):
+        cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=True)
+        cond = self.cond_intro_conv(cond)
+        x = x + cond
+        
+        inp = x
 
         x = self.norm1(x)
-        x = x * (scale_att + 1) + shift_att
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.sg(x)
@@ -710,19 +712,18 @@ class NAFBlock(nn.Module):
 
         x = self.dropout1(x)
 
-        y = inp + x * self.beta
+        y = inp + x # * self.beta
 
         x = self.norm2(y)
-        x = x * (scale_ffn + 1) + shift_ffn
         x = self.conv4(x)
         x = self.sg(x)
         x = self.conv5(x)
 
         x = self.dropout2(x)
 
-        x = y + x * self.gamma
+        x = y + x # * self.gamma
 
-        return x, time
+        return x
 
 
 class Permute(nn.Module):
@@ -739,34 +740,41 @@ class Permute(nn.Module):
             return x.permute(0, 2, 3, 1)
         else:
             raise NotImplementedError
+        
+    def __repr__(self):
+        return f"Permute(mode={self.mode})"
 
 
-def down(chan):
+def down(chan, down_type='patch_merge', permute=False, r=2, chan_r=2):
+    if down_type == 'conv':
+        return nn.Sequential(
+            # Rearrange('b h w c -> b c h w', h=h, w=w),
+            Permute("c_first") if permute else nn.Identity(),
+            nn.Conv2d(chan, chan * chan_r, r, r),
+            # Rearrange('b c h w -> b h w c'),
+            Permute("c_last") if permute else nn.Identity(),
+        )
+    elif down_type == 'patch_merge':
+        return PatchMerging2D(chan, chan*2)
+    else:
+        raise NotImplementedError(f'down type {down_type} not implemented')
+
+
+def up(chan, permute=False, r=2, chan_r=2,):
     return nn.Sequential(
         # Rearrange('b h w c -> b c h w', h=h, w=w),
-        Permute("c_first"),
-        nn.Conv2d(chan, 2 * chan, 2, 2),
-        # nn.Upsample(scale_factor=0.5, mode="bilinear"),
-        # Rearrange('b c h w -> b h w c'),
-        Permute("c_last"),
-    )
-
-
-def up(chan):
-    return nn.Sequential(
-        # Rearrange('b h w c -> b c h w', h=h, w=w),
-        Permute("c_first"),
+        Permute("c_first") if permute else nn.Identity(),
         # ver 1: use pixelshuffle
         # ver 2: directly upsample and half the channels
-        nn.Conv2d(chan, chan // 2, 1, bias=False),
+        nn.Conv2d(chan, chan // chan_r, 1, bias=False),
         # nn.PixelShuffle(2),
-        nn.Upsample(scale_factor=2, mode="bilinear"),
+        nn.Upsample(scale_factor=r, mode="bilinear"),
         # Rearrange('b c h w -> b h w c'),
-        Permute("c_last"),
+        Permute("c_last") if permute else nn.Identity(),
     )
 
 
-@register_model("panMamba")
+@register_model("panMamba_only_NAF")
 class ConditionalNAFNet(BaseModel):
     def __init__(
         self,
@@ -774,10 +782,13 @@ class ConditionalNAFNet(BaseModel):
         condition_channel=3,
         out_channel=3,
         width=16,
-        middle_blk_num=1,
-        enc_blk_nums=[],
-        dec_blk_nums=[],
-        ssm_convs=[],
+        # NAFBlock settings
+        naf_enc_blk_nums=[],
+        naf_dec_blk_nums=[],
+        naf_chan_upscale=[],
+        # LEMMBlock settings
+        middle_blk_nums=2,
+        # model settings
         upscale=1,
         if_abs_pos=True,
         if_rope=False,
@@ -790,17 +801,15 @@ class ConditionalNAFNet(BaseModel):
         self.if_abs_pos = if_abs_pos
         self.rope = if_rope
         self.pt_img_size = pt_img_size
-        self.patch_merge = patch_merge
+        
+        # # TODO: only support global ssm state has the same dimension
+        # assert len(set(list(zip(ssm_d_states))[-1])) == 1, 'only support global ssm state has the same dimension'
 
         if if_abs_pos:
-            self.abs_pos = nn.Parameter(
-                torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True
-            )
+            self.abs_pos = nn.Parameter(torch.randn(1, pt_img_size, pt_img_size, width), requires_grad=True)
 
         if if_rope:
-            self.rope = VisionRotaryEmbeddingFast(
-                chan, pt_seq_len=pt_img_size, ft_seq_len=None
-            )
+            self.rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
 
         self.intro = nn.Sequential(
             nn.Conv2d(
@@ -811,7 +820,6 @@ class ConditionalNAFNet(BaseModel):
                 groups=1,
                 bias=False,
             ),
-            Rearrange("b c h w -> b h w c"),
         )
 
         self.ending = nn.Conv2d(
@@ -825,73 +833,66 @@ class ConditionalNAFNet(BaseModel):
         )
 
         ## main body
-        self.encoders = nn.ModuleList()
-        self.decoders = nn.ModuleList()
+        self.naf_encoders = nn.ModuleList()
+        self.naf_decoders = nn.ModuleList()
         self.middle_blks = nn.ModuleList()
-        self.ups = nn.ModuleList()
-        self.downs = nn.ModuleList()
+        self.naf_ups = nn.ModuleList()
+        self.naf_downs = nn.ModuleList()
+        
 
-        depth = sum(enc_blk_nums) + middle_blk_num + sum(dec_blk_nums)
+        depth = sum(naf_enc_blk_nums) + sum(naf_dec_blk_nums) + middle_blk_nums
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         inter_dpr = dpr
 
         chan = width
         n_prev_blks = 0
-        # encoder
-        for layer_id, num in enumerate(enc_blk_nums):
-            self.encoders.append(
-                Sequential(
-                    *[
-                        Block(
-                            condition_channel, chan, depth, layer_id, 
-                            drop_path=inter_dpr[n_prev_blks + i],
-                        )
-                        for i in range(num)
-                    ]
+        
+        ## encoder
+        # NAF layer
+        print('=== init NAF encoder ===')
+        for enc_i, num in enumerate(naf_enc_blk_nums):
+            self.naf_encoders.append(
+                UniSequential(
+                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
+                      for i in range(num)]
                 )
             )
-            self.downs.append(down(chan))
-            chan = chan * 2
+            self.naf_downs.append(down(chan, down_type='conv'))
+            chan = chan * naf_chan_upscale[enc_i]
             n_prev_blks += num
             pt_img_size //= 2
-
-        # middle layer
-        self.middle_blks = Sequential(
+            
+        ## middel layer
+        print('=== init NAF middle blks ===')
+        self.middle_blks = UniSequential(
             *[
-                Block(
-                    condition_channel, chan, depth, layer_id, 
-                    drop_path=inter_dpr[n_prev_blks + i],
-                )
+                NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i])
                 for i in range(num)
             ]
         )
-        n_prev_blks += middle_blk_num
-
-        # decoder
-        ssm_convs = list(reversed(ssm_convs))
-        for layer_id, num in enumerate(reversed(dec_blk_nums), layer_id):
-            self.ups.append(up(chan))
-            chan = chan // 2
+        n_prev_blks += middle_blk_nums
+        
+        ## decoder
+        # NAF layer
+        print('=== init NAF decoder ===')
+        for dec_i, num in enumerate(naf_dec_blk_nums):
+            self.naf_ups.append(up(chan))
+            chan = chan // naf_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
-
-            self.decoders.append(
-                Sequential(
-                    nn.Linear(chan * 2, chan),
-                    *[
-                        Block(
-                            condition_channel, chan, depth, layer_id, 
-                            drop_path=inter_dpr[n_prev_blks + i],
-                        )
-                        for i in range(num)
-                    ],
+            self.naf_decoders.append(
+                UniSequential(
+                    nn.Conv2d(chan*2, chan, 1),
+                    *[NAFBlock(chan, condition_channel, drop_out_rate=inter_dpr[n_prev_blks + i]) 
+                      for i in range(num)]
                 )
             )
             n_prev_blks += num
 
-        self.padder_size = 2 ** len(self.encoders)
+        # for patch merging if the image is too large
+        self.patch_merge = patch_merge
 
         # init
-        print("============= init network =================")
+        # print("============= init network =================")
         self.apply(self._init_weights)
 
     def _init_weights(self, m: nn.Module):
@@ -904,7 +905,7 @@ class ConditionalNAFNet(BaseModel):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
         elif isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="leaky_relu")
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
@@ -920,44 +921,32 @@ class ConditionalNAFNet(BaseModel):
             ft_img_size *= 2
             self.middle_rope.alter_seq_len(ft_img_size, rope.seq_len)
 
-    def _forward_once(self, inp, cond):
+    def _forward_implem(self, inp, cond):
         x = inp
-        *_, H, W = x.shape
+        B, C, H, W = x.shape
 
         x = self.intro(x)
         if self.if_abs_pos:
             x = x + self.abs_pos
-
-        encs = []
-
-        for encoder, down in zip(self.encoders, self.downs):
-            cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
-            x = encoder.enc_forward(x, cond, (H, W))
-            encs.append(x)
+        
+        naf_encs = []
+        for encoder, down in zip(self.naf_encoders, self.naf_downs):
+            x = encoder.NAF_enc_forward(x, cond)
+            naf_encs.append(x)
             x = down(x)
-            H = H // 2
-            W = W // 2
 
-        cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
-        x = self.middle_blks.enc_forward(x, cond, (H, W))
-
-        for decoder, up, enc_skip in zip(self.decoders, self.ups, encs[::-1]):
+        x = self.middle_blks.NAF_enc_forward(x, cond)
+            
+        for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
             x = up(x)
-            H = H * 2
-            W = W * 2
-            cond = F.interpolate(cond, (H, W), mode="bilinear", align_corners=True)
-            x = torch.cat([x, enc_skip], dim=-1)
-            x = decoder.dec_forward(x, cond, (H, W))
+            x = torch.cat([x, enc_skip], dim=1)
+            x = decoder.NAF_dec_forward(x, cond)
 
-        x = rearrange(x, "b h w c -> b c h w", h=H, w=W)
         x = self.ending(x)
 
-        x = x[..., :H, :W]
+        # x = x[..., :H, :W]
 
         return x
-
-    def _forward_implem(self, *args, **kwargs):
-        return self._forward_once(*args, **kwargs)
 
     @torch.no_grad()
     def val_step(self, ms, lms, pan, patch_merge=None):
@@ -980,63 +969,105 @@ class ConditionalNAFNet(BaseModel):
 
         return sr
 
-    def train_step(self, ms, lms, pan, gt, criterion):
+    def train_step(self, ms, lms, pan, gt, criterion,):           
         sr = self._forward_implem(lms, pan) + lms
         loss = criterion(sr, gt)
 
         return sr, loss
 
     def patch_merge_step(self, ms, lms, pan, **kwargs):
-        sr = self._forward_implem(lms, pan)  # sr[:,[29,19,9]]
+        sr = self._forward_implem(lms, pan, **kwargs)  # sr[:,[29,19,9]]
         return sr
 
-    def check_image_size(self, x):
-        _, _, h, w = x.size()
-        mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
-        mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
-        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
-        return x
 
 if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    # device = torch.device("cuda:0")
-    device = 'cuda:0'
+    device = "cuda:1"
     torch.cuda.set_device(device)
+    
+    # forwawrd_type v4 model: 5.917M
+    # + using prev_ssm_state: 8.651M
     net = ConditionalNAFNet(
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=16,
-        middle_blk_num=2,
-        enc_blk_nums=[2]*3,
-        dec_blk_nums=[2]*3,
+        width=32,
+        middle_blk_nums=2,
+        
+        naf_enc_blk_nums=[2,2,2],
+        naf_dec_blk_nums=[2,2,2],
+        naf_chan_upscale=[2,2,2],
+        
+        # ssm_enc_blk_nums=[2, 2, 2],
+        # ssm_dec_blk_nums=[2, 2, 2],
+        # ssm_chan_upscale=[2, 2, 2],
+        # ssm_ratios=[2,2,2],
+        # window_sizes=[8,8,8],
+        # ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
+        # ssm_dec_d_states=[[None, 32], [None, 32], [None, 32]],
+        # ssm_enc_convs=[[5, 11], [5, 11], [None, 11]],
+        # ssm_dec_convs=[[None, 11], [None, 11], [None, 11]],
+        
         pt_img_size=64,
         if_rope=False,
-    ).cuda()
-
-    img_size = 16
-    scale = 4
-    ms = torch.randn(1, 8, img_size, img_size).cuda()
-    img = torch.randn(1, 8, img_size*scale, img_size*scale).cuda()
-    cond = torch.randn(1, 1, img_size*scale, img_size*scale).cuda()
-
-    # net = torch.compile(net)
+        if_abs_pos=False,
+        patch_merge=True,
+    ).to(device)
     
-    out = net._forward_once(img, cond)
-    print(out.shape)
-    sr = torch.randn(1, 8, img_size*scale, img_size*scale).cuda()
-    loss = F.mse_loss(out, sr)
-    print(loss)
-    loss.backward()
-    
-    # test patch merge
-    # sr = net.val_step(ms, img, cond)
-    # print(sr.shape)
+    # from model.module.vmamba_module_v3 import selective_scan_flop_jit
+    # supported_ops={
+    #         "aten::silu": None, # as relu is in _IGNORED_OPS
+    #         "aten::neg": None, # as relu is in _IGNORED_OPS
+    #         "aten::exp": None, # as relu is in _IGNORED_OPS
+    #         "aten::flip": None, # as permute is in _IGNORED_OPS
+    #         # "prim::PythonOp.CrossScan": None,
+    #         # "prim::PythonOp.CrossMerge": None,
+    #         "prim::PythonOp.SelectiveScanMamba": selective_scan_flop_jit,
+    #         "prim::PythonOp.SelectiveScanOflex": selective_scan_flop_jit,
+    #         "prim::PythonOp.SelectiveScanCore": selective_scan_flop_jit,
+    #         "prim::PythonOp.SelectiveScanNRow": selective_scan_flop_jit,
+    #     }
 
-    print(memory_summary(device=device, abbreviated=False))
-    # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+    # net = MambaBlock(4).to(device)
 
-    # net.forward = net._forward_once
-    # print(flop_count_table(FlopCountAnalysis(net, (img, cond))))
+    # net.eval()
+    for img_sz in [64]:
+        scale = 4
+        gt_img_sz = img_sz // scale
+        chan = 8
+        pan_chan = 1
+        ms = torch.randn(1, chan, gt_img_sz, gt_img_sz).to(device)
+        img = torch.randn(1, chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
+        cond = torch.randn(1, pan_chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
+        gt = torch.randn(1, chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
+
+        # net = torch.compile(net)
+
+        # out = net._forward_implem(img, cond)
+        # loss = F.mse_loss(out, gt)
+        # loss.backward()
+        # print(loss)
+        
+        # ## find unused params
+        # for n, p in net.named_parameters():
+        #     if p.grad is None:
+        #         print(n, "has no grad")
+
+        # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
+
+        # print(out.shape)
+
+        # test patch merge
+        # sr = net.val_step(ms, img, cond)
+        # print(sr.shape)
+
+        # print(torch.cuda.memory_summary(device=device))
+
+        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+
+        net.forward = net._forward_implem
+        flops = FlopCountAnalysis(net, (img, cond))
+        # flops.set_op_handle(**supported_ops)
+        print(flop_count_table(flops, max_depth=3))

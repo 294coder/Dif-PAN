@@ -819,14 +819,15 @@ class SS2D(nn.Module):
             # self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
             
             # print(f'SS2D: got prev_state_chan: {prev_state_chan * 4}')
+            
             self.ssm_state_weight1 = nn.Parameter(torch.randn((k_group*d_inner, prev_state_chan, 1)))
             if skip_state_chan is not None:
                 self.ssm_state_weight2 = nn.Parameter(torch.randn((k_group*d_inner, d_inner, 1)))
             else:
                 self.ssm_state_weight2 = None
-            self.xs_gate_weight = nn.Parameter(torch.zeros((k_group*d_state, d_inner, 1)))
-            self.ssm_gate_ratio = nn.Parameter(torch.zeros(1, k_group, d_inner, 1))
-            
+            self.xs_gate_weight = nn.Parameter(torch.randn((k_group*d_state, d_inner, 1)))
+            self.ssm_gate_ratio = nn.Parameter(torch.randn(1, k_group, d_inner, 1))
+            self.ssm_gate_ratio._no_weight_decay = True
             
             # bias here
             

@@ -33,6 +33,7 @@ from utils import (
     BestMetricSaveChecker,
     set_all_seed,
     get_loss,
+    get_fusion_dataset
 )
 
 
@@ -41,7 +42,7 @@ def get_args():
 
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
-    parser.add_argument("--sub_arch", default="none", help="panformer sub-architecture name")
+    parser.add_argument("--sub_arch", default=None, help="panformer sub-architecture name")
 
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
@@ -113,7 +114,7 @@ def main(local_rank, args):
         print(args)
 
     # define network
-    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is None else args.arch
+    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
     args.full_arch = full_arch
     network_configs = getattr(
         args.network_configs, full_arch, args.network_configs
@@ -134,9 +135,7 @@ def main(local_rank, args):
             rank=local_rank,
         )
         network = network.to(local_rank)
-        args.optimizer.lr *= (
-            args.world_size
-        )  # FIXME: may cause optimization action undesirable
+        args.optimizer.lr *= args.world_size
         network = nn.SyncBatchNorm.convert_sync_batchnorm(network)
         network = nn.parallel.DistributedDataParallel(
             network,
@@ -218,106 +217,16 @@ def main(local_rank, args):
         )
     else:
         from utils import NoneLogger
-
         logger = NoneLogger()
 
     # get datasets and dataloader
-    if args.split_ratio is not None and args.path is not None and False:  # never reach here
-        # FIXME: only support splitting worldview3 datasets
-        # Warn: will be decrepated in the next update
-        train_ds, val_ds = make_datasets(
-            args.path,
-            hp=args.hp,
-            seed=args.seed,
-            aug_probs=args.aug_probs,
-            split_ratio=args.split_ratio,
-        )
-    else:
-        if args.dataset == "flir":
-            train_ds = FLIRDataset(args.path.base_dir, "train")
-            val_ds = FLIRDataset(args.path.base_dir, "test")
-        elif args.dataset == "tno":
-            train_ds = TNODataset(
-                args.path.base_dir, "train", aug_prob=args.aug_probs[0]
-            )
-            val_ds = TNODataset(args.path.base_dir, "test", aug_prob=args.aug_probs[1])
-
-        elif args.dataset in [
-            "wv3",
-            "qb",
-            "gf2",
-            "cave_x4",
-            "harvard_x4",
-            "cave_x8",
-            "harvard_x8",
-            "hisi-houston",
-        ]:
-            # the dataset has already splitted
-
-            # FIXME: 需要兼顾老代码（只有trian_path和val_path）的情况
-            if hasattr(args.path, "train_path") and hasattr(args.path, "val_path"):
-                # 旧代码：手动切换数据集路径
-                train_path = args.path.train_path
-                val_path = args.path.val_path
-            else:
-                _args_path_keys = list(args.path.__dict__.keys())
-                for k in _args_path_keys:
-                    if args.dataset in k:
-                        train_path = getattr(args.path, f"{args.dataset}_train_path")
-                        val_path = getattr(args.path, f"{args.dataset}_val_path")
-            assert (
-                train_path is not None and val_path is not None
-            ), "train_path and val_path should not be None"
-
-            h5_train, h5_val = (
-                h5py.File(train_path),
-                h5py.File(val_path),
-            )
-            if args.dataset in ["wv3", "qb"]:
-                d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
-                train_ds, val_ds = (
-                    WV3Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
-                    WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
-                )
-            elif args.dataset == "gf2":
-                d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
-                train_ds, val_ds = (
-                    GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
-                    GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
-                )
-            elif args.dataset[:4] == "cave" or args.dataset[:7] == "harvard":
-                keys = ["LRHSI", "HSI_up", "RGB", "GT"]
-                if args.dataset.split("-")[-1] == "houston":
-                    from einops import rearrange
-                    
-                    def permute_fn(x):
-                        return rearrange(x, "b h w c -> b c h w")
-
-                    dataset_fn = permute_fn
-                else:
-                    dataset_fn = None
-
-                d_train, d_val = (
-                    h5py_to_dict(h5_train, keys),
-                    h5py_to_dict(h5_val, keys),
-                )
-                train_ds = HISRDatasets(
-                    d_train, aug_prob=args.aug_probs[0], dataset_fn=dataset_fn
-                )
-                val_ds = HISRDatasets(
-                    d_val, aug_prob=args.aug_probs[1], dataset_fn=dataset_fn
-                )
-                # del h5_train, h5_val
-        else:
-            raise NotImplementedError(f"not support dataset {args.dataset}")
+    train_ds, val_ds = get_fusion_dataset(args)
         
     # from torch.utils.data import Subset
     # train_ds = Subset(train_ds, range(0, 20))
         
     if args.ddp:
-        train_sampler = torch.utils.data.DistributedSampler(
-            train_ds, shuffle=args.shuffle
-        )
+        train_sampler = torch.utils.data.DistributedSampler(train_ds, shuffle=args.shuffle)
         val_sampler = torch.utils.data.DistributedSampler(val_ds, shuffle=args.shuffle)
     else:
         train_sampler, val_sampler = None, None
@@ -355,7 +264,7 @@ def main(local_rank, args):
     print("network params are saved at {}".format(args.save_path))
 
     # save checker
-    save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
+    save_checker = BestMetricSaveChecker(metric_name="SAM", check_order="down")
 
     # start training 
     # TODO: use safetensor

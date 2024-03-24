@@ -583,7 +583,20 @@ def window_reverse(windows, window_size, H, W):
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
     return x
 
-
+def convs(in_chan, out_chan=None, conv_type='conv3'):
+    if conv_type == 'conv3':
+        return nn.Sequential(
+            nn.Conv2d(in_chan, out_chan, 1),
+            nn.Conv2d(out_chan, out_chan, 3, 1, 1, groups=out_chan),
+        )
+    elif conv_type == 'dwconv3':
+        return nn.Conv2d(in_chan, in_chan, 3, 1, 1, groups=in_chan)
+    elif conv_type == 'conv1':
+        return nn.Conv2d(in_chan, out_chan, 1)
+    else:
+        raise ValueError(f'Unknown conv type {conv_type}')
+    
+       
 class MambaInjectionBlock(nn.Module):
     def __init__(
         self,
@@ -612,10 +625,9 @@ class MambaInjectionBlock(nn.Module):
         self.local_shift_size = local_shift_size
         self.local_state_to_global = local_state_to_global
         
-        self.intro_conv = nn.Sequential(
-            nn.Conv2d(in_chan, inner_chan, 1),
-            nn.Conv2d(inner_chan, inner_chan, 3, 1, 1, groups=inner_chan),
-        )
+        self.intro_conv = convs(in_chan, inner_chan, 'conv1')
+        self.intro_to_latent = nn.Linear(inner_chan*2, inner_chan, bias=False)
+        
         # self.inner_to_outter_conv = nn.Linear(2*inner_chan, inner_chan)
         # self.lerp = nn.Sequential(LayerNorm(in_chan),
         #                           nn.AdaptiveAvgPool2d(1),
@@ -624,17 +636,44 @@ class MambaInjectionBlock(nn.Module):
         
         ssm_local_conv, ssm_global_conv = ssm_conv[0], ssm_conv[1]
         local_d_state, global_d_state = d_states[0], d_states[1]
+        
+        # v3: mamba in mamba
+        if local_d_state is not None and ssm_local_conv is not None:
+            self.local_state_to_global = False
+            
+            self.mamba_inner_shared = VSSBlock(
+                inner_chan,
+                drop_path=drop_path,
+                mlp_ratio=1,
+                norm_layer=norm_layer,
+                mlp_drop_rate=0.0,
+                ssm_d_state=local_d_state,
+                ssm_conv=ssm_local_conv,
+                ssm_dt_rank=dt_rank,
+                ssm_ratio=1,
+                ssm_init='v2',
+                forward_type=forward_type,
+                use_checkpoint=use_ckpt,
+                prev_state_chan=None,
+                skip_state_chan=None,
+                # prev_state_gate=prev_state_gate,
+                **mamba_kwargs,
+            )
+            # self.norm = norm_layer(inner_chan)
+            self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
+            self.enhanced_factor._no_weight_decay = True
+        
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
             drop_path=drop_path,
             mlp_ratio=mlp_ratio,
             norm_layer=norm_layer,
             mlp_drop_rate=mlp_drop,
-            ssm_d_state=local_d_state,
+            ssm_d_state=global_d_state,
             ssm_conv=ssm_global_conv,
             ssm_dt_rank=dt_rank,
             ssm_ratio=ssm_ratio,
-            ssm_init='v0',
+            ssm_init='v2',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
             # prev_state_gate=False,  # may use much gpu mem
@@ -642,28 +681,6 @@ class MambaInjectionBlock(nn.Module):
             skip_state_chan=skip_state_chan,
             **mamba_kwargs,
         )
-
-        # v3: mamba in mamba
-        self.mamba_inner_shared = VSSBlock(
-            inner_chan,
-            drop_path=drop_path,
-            mlp_ratio=1,
-            norm_layer=norm_layer,
-            mlp_drop_rate=0.0,
-            ssm_d_state=global_d_state,
-            ssm_conv=ssm_local_conv,
-            ssm_dt_rank=dt_rank,
-            ssm_ratio=ssm_ratio,
-            ssm_init='v0',
-            forward_type=forward_type,
-            use_checkpoint=use_ckpt,
-            prev_state_chan=None,
-            skip_state_chan=None,
-            # prev_state_gate=prev_state_gate,
-            **mamba_kwargs,
-        )
-        # self.norm = norm_layer(inner_chan)
-        self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
 
         # v1: add attn
         # self.adaptive_pool_size = (3, 3)
@@ -682,7 +699,7 @@ class MambaInjectionBlock(nn.Module):
     def forward(self, 
                 feat: torch.Tensor, 
                 cond: torch.Tensor, 
-                c_shuffle=True,
+                c_shuffle=True,  # decrepted
                 prev_local_state: torch.Tensor=None,
                 prev_global_state: torch.Tensor=None,
                 skip_local_state: torch.Tensor=None,
@@ -694,21 +711,16 @@ class MambaInjectionBlock(nn.Module):
         # intro_conv v1: on cond
         cond = self.intro_conv(cond)
         cond = cond.permute(0, 2, 3, 1)
-        x = feat + cond
+        # x = feat + cond
+        x = self.intro_to_latent(torch.cat([feat, cond], dim=-1))
 
         # intro_conv v2: on catted feat and cond
         # cond = cond.permute(0, 2, 3, 1)
         # x = torch.cat([feat, cond], dim=-1)
         # x = self.intro_conv(x)
         # x_in = x
-
-        # v3: mamba in mamba
-        if self.local_shift_size > 0:
-            x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))
             
         # check cache for mamba blocks
-        if not self.mamba_inner_shared.prev_state_gate: 
-            prev_local_state = None
         if not self.mamba.prev_state_gate:
             prev_global_state = None
         
@@ -717,16 +729,28 @@ class MambaInjectionBlock(nn.Module):
         # else:
         #     print('no global ssm state')
         
-        xs_local = window_partition(x, self.window_size)
-        xs_local, local_ssm_state = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
-        x_local = window_reverse(xs_local, self.window_size, h, w)
+        if hasattr(self, 'mamba_inner_shared'):
+            if not self.mamba_inner_shared.prev_state_gate: 
+                prev_local_state = None
+            
+            # v3: mamba in mamba
+            if self.local_shift_size > 0:
+                x = torch.roll(x, shifts=(-self.local_shift_size, -self.local_shift_size), dims=(1, 2))            
+            
+            xs_local = window_partition(x, self.window_size)
+            xs_local, local_ssm_state = self.mamba_inner_shared(xs_local, prev_local_state, skip_local_state)
+            x_local = window_reverse(xs_local, self.window_size, h, w)
         
-        if self.local_shift_size > 0:
-            x_local = torch.roll(x_local, shifts=(self.local_shift_size, self.local_shift_size), dims=(1, 2))
+            if self.local_shift_size > 0:
+                x_local = torch.roll(x_local, shifts=(self.local_shift_size, self.local_shift_size), dims=(1, 2))
         
-        if c_shuffle:
-            c_perm = torch.randperm(c)
-            x_local = x_local[:, :, :, c_perm]
+            # # decrepted
+            # if c_shuffle:
+            #     c_perm = torch.randperm(c)
+            #     x_local = x_local[:, :, :, c_perm]
+                
+            x = x_local * self.enhanced_factor + x
+        else: local_ssm_state = None
         
         # x_local = self.inner_norm(x_local)
 
@@ -741,12 +765,13 @@ class MambaInjectionBlock(nn.Module):
                 prev_global_state = local_to_global_sta + prev_global_state
             else:
                 prev_global_state = local_to_global_sta
-            
-        x, global_ssm_state = self.mamba(x_local * self.enhanced_factor + x, prev_global_state, skip_global_state)
         
-        if c_shuffle:
-            c_perm = torch.argsort(c_perm)
-            x = x[:, :, :, c_perm]
+        # ensure to call
+        x, global_ssm_state = self.mamba(x, prev_global_state, skip_global_state)
+        
+        # if c_shuffle:
+        #     c_perm = torch.argsort(c_perm)
+        #     x = x[:, :, :, c_perm]
 
         # x_spe = F.adaptive_avg_pool2d(
         #     x_in.permute(0, 3, 1, 2), self.adaptive_pool_size
@@ -1021,10 +1046,12 @@ class ConditionalNAFNet(BaseModel):
         ssm_enc_blk_nums=[],
         middle_blk_nums=2,
         ssm_dec_blk_nums=[],
-        ssm_convs=[],
+        ssm_enc_convs=[],
+        ssm_dec_convs=[],
         ssm_ratios=[],
         ssm_chan_upscale=[],
-        ssm_d_states=[],
+        ssm_enc_d_states=[],
+        ssm_dec_d_states=[],
         window_sizes=[],
         # model settings
         upscale=1,
@@ -1107,13 +1134,35 @@ class ConditionalNAFNet(BaseModel):
         # LEMM layer
         print('=== init SSM encoder ===')
         for enc_i, num in enumerate(ssm_enc_blk_nums):
-            def prev_state_chan_fn(i):
-                if enc_i == 0:
-                    if i == 0: prev_state_chan = None
-                    else: prev_state_chan = chan * ssm_ratios[enc_i]
-                else:
-                    if i == 0: prev_state_chan = prev_ssm_chan
-                    else: prev_state_chan = chan * ssm_ratios[enc_i]
+            
+            def prev_state_chan_fn(i, only_share_in_blk=True, mod='enc'):
+                if mod == 'enc':
+                    if enc_i == 0:
+                        if i == 0: prev_state_chan = None
+                        else:
+                            prev_state_chan = chan * ssm_ratios[enc_i]
+                    else:
+                        if i == 0:
+                            if not only_share_in_blk:
+                                prev_state_chan = prev_ssm_chan 
+                            else: prev_state_chan = None
+                        else: 
+                            prev_state_chan = chan * ssm_ratios[enc_i]
+                        
+                elif mod == 'mid':
+                    if i == 0:
+                        if not only_share_in_blk:
+                            prev_state_chan = prev_ssm_chan 
+                        else: prev_state_chan = None
+                    else:
+                        prev_state_chan = chan * ssm_ratios[-1]
+                
+                elif mod == 'dec':
+                    if (i == 0) and (not only_share_in_blk):
+                        prev_state_chan = None
+                    else:
+                        prev_state_chan = prev_ssm_chan
+                        
                 # print(f'prev_state_chan={prev_state_chan * 4 if prev_state_chan is not None else prev_state_chan}')  # K=4
                 return prev_state_chan
             
@@ -1126,12 +1175,12 @@ class ConditionalNAFNet(BaseModel):
                         MambaInjectionBlock(
                             condition_channel,
                             chan,
-                            ssm_conv=ssm_convs[enc_i],
+                            ssm_conv=ssm_enc_convs[enc_i],
                             window_size=window_sizes[enc_i],
-                            d_states=ssm_d_states[enc_i],
+                            d_states=ssm_enc_d_states[enc_i],
                             ssm_ratio=ssm_ratios[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_chan=prev_state_chan_fn(i),
+                            prev_state_chan=prev_state_chan_fn(i, mod='enc'),
                         )
                         for i in range(num)
                     ]
@@ -1146,18 +1195,18 @@ class ConditionalNAFNet(BaseModel):
 
         ## middel layer
         print('=== init SSM middle blks ===')
-        prev_state_chan_fn = lambda i: prev_ssm_chan if i == 0 else chan * ssm_ratios[-1]
+        # prev_state_chan_fn = lambda i: prev_ssm_chan if i == 0 else chan * ssm_ratios[-1]
         self.middle_blks = UniSequential(
             *[
                 MambaInjectionBlock(
                     condition_channel,
                     chan,
-                    ssm_conv=ssm_convs[-1],
+                    ssm_conv=ssm_enc_convs[-1],
                     window_size=window_sizes[-1],
-                    d_states=ssm_d_states[-1],
+                    d_states=ssm_enc_d_states[-1],
                     ssm_ratio=ssm_ratios[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
-                    prev_state_chan=prev_state_chan_fn(i),
+                    prev_state_chan=prev_state_chan_fn(i, mod='mid'),
                     # prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
                 for i in range(num)
@@ -1173,7 +1222,7 @@ class ConditionalNAFNet(BaseModel):
         print('=== init SSM decoder ===')
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
             self.lemm_ups.append(up(chan, permute=True))
-            prev_chan_fn = lambda i: prev_ssm_chan #if i == 0 else chan * ssm_ratios[::-1][dec_i]
+            # prev_chan_fn = lambda i: prev_ssm_chan #if i == 0 else chan * ssm_ratios[::-1][dec_i]
             chan = chan // ssm_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
 
@@ -1184,13 +1233,13 @@ class ConditionalNAFNet(BaseModel):
                         MambaInjectionBlock(
                             condition_channel,
                             chan,
-                            ssm_conv=ssm_convs[::-1][dec_i],
+                            ssm_conv=ssm_dec_convs[dec_i],
                             window_size=window_sizes[::-1][dec_i],
-                            d_states=ssm_d_states[::-1][dec_i],
+                            d_states=ssm_dec_d_states[dec_i],
                             ssm_ratio=ssm_ratios[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_chan=prev_chan_fn(i),  
-                            skip_state_chan=chan,  # assert skip_state_chan == chan
+                            prev_state_chan=prev_state_chan_fn(i, mod='dec'),
+                            skip_state_chan=chan if i == 0 else None,  # assert skip_state_chan == chan
                         )
                         for i in range(num)
                     ],
@@ -1219,7 +1268,7 @@ class ConditionalNAFNet(BaseModel):
 
         # init
         # print("============= init network =================")
-        # self.apply(self._init_weights)
+        self.apply(self._init_weights)
 
     def _init_weights(self, m: nn.Module):
         # print(type(m))
@@ -1231,7 +1280,7 @@ class ConditionalNAFNet(BaseModel):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
         elif isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="leaky_relu")
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
@@ -1248,25 +1297,8 @@ class ConditionalNAFNet(BaseModel):
             self.middle_rope.alter_seq_len(ft_img_size, rope.seq_len)
 
     def _forward_implem(self, inp, cond, c_shuffle=False):
-        # inp_res = inp.clone()
-
-        # if isinstance(time, int) or isinstance(time, float):
-        #     time = torch.tensor([time]).to(inp.device)
-
-        # x = inp - cond[:, :inp.shape[1]]
-        # x = torch.cat([x, cond], dim=1)
-        # x = torch.cat([inp, cond], dim=1)
         x = inp
         B, C, H, W = x.shape
-
-        # x_hwwh = torch.cat([x.view(B, -1, L),
-        #                       torch.transpose(x, dim0=2, dim1=3).contiguous().view(B, -1, L)],
-        #                       dim=1)
-        # x = torch.cat([x_hwwh, torch.flip(x_hwwh, dims=[-1])], dim=1) # (b, k, d, l)
-        # x = x.permute(0, 2, 1).contiguous()
-
-        # t = self.time_mlp(time)
-        # x = self.check_image_size(x)
 
         x = self.intro(x)
         if self.if_abs_pos:
@@ -1339,7 +1371,7 @@ class ConditionalNAFNet(BaseModel):
 
         return sr
 
-    def train_step(self, ms, lms, pan, gt, criterion, c_shuffle=False):
+    def train_step(self, ms, lms, pan, gt, criterion, c_shuffle=False):           
         sr = self._forward_implem(lms, pan, c_shuffle) + lms
         loss = criterion(sr, gt)
 
@@ -1370,20 +1402,22 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=16,
+        width=32,
         middle_blk_nums=2,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[1, 1, 2],
-        ssm_dec_blk_nums=[1, 1, 2],
+        ssm_enc_blk_nums=[2, 2, 2],
+        ssm_dec_blk_nums=[2, 2, 2],
         ssm_chan_upscale=[2, 2, 2],
         ssm_ratios=[2,2,2],
         window_sizes=[8,8,8],
-        ssm_d_states=[[32, 32], [32, 32], [32, 32]],
-        ssm_convs=[[5, 11], [5, 11], [5, 11]],
+        ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
+        ssm_dec_d_states=[[None, 32], [None, 32], [None, 32]],
+        ssm_enc_convs=[[5, 11], [5, 11], [None, 11]],
+        ssm_dec_convs=[[None, 11], [None, 11], [None, 11]],
         
         pt_img_size=64,
         if_rope=False,
@@ -1408,7 +1442,7 @@ if __name__ == "__main__":
     # net = MambaBlock(4).to(device)
 
     # net.eval()
-    for img_sz in [1024]:
+    for img_sz in [64]:
         scale = 4
         gt_img_sz = img_sz // scale
         chan = 8
@@ -1420,11 +1454,12 @@ if __name__ == "__main__":
 
         # net = torch.compile(net)
 
-        out = net._forward_implem(img, cond)
-        loss = F.mse_loss(out, gt)
-        loss.backward()
-        print(loss)
-        # find unused params
+        # out = net._forward_implem(img, cond)
+        # loss = F.mse_loss(out, gt)
+        # loss.backward()
+        # print(loss)
+        
+        # ## find unused params
         # for n, p in net.named_parameters():
         #     if p.grad is None:
         #         print(n, "has no grad")
@@ -1437,11 +1472,11 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        print(torch.cuda.memory_summary(device=device))
+        # print(torch.cuda.memory_summary(device=device))
 
-        # from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 
-        # net.forward = net._forward_implem
-        # flops = FlopCountAnalysis(net, (img, cond))
-        # flops.set_op_handle(**supported_ops)
-        # print(flop_count_table(flops))
+        net.forward = net._forward_implem
+        flops = FlopCountAnalysis(net, (img, cond))
+        flops.set_op_handle(**supported_ops)
+        print(flop_count_table(flops, max_depth=3))

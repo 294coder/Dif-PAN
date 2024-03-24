@@ -12,7 +12,7 @@
 /*/*/*/*.ninja
 /*/*/*/*/*.pyc
 /.cache/
-/orch/
+/.hypothesis/
 
 
 /.history/
@@ -22,7 +22,6 @@
 /log_file/
 /loss_landscape/
 /matlab_metrcis/
-/media/
 /train_status/
 /visualized_img/
 /weight/

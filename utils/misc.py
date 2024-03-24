@@ -36,13 +36,6 @@ def set_all_seed(seed=2022):
     cudnn.benchmark = False
 
 
-class Identity:
-    def __call__(self, *args):
-        # args is a tuple
-        # return is also a tuple
-        return args
-
-
 def to_numpy(*args):
     l = []
     for i in args:
@@ -258,12 +251,12 @@ def config_py_load(name, base_path="configs"):
     return args.config
 
 
-class _NameSpace:
+class NameSpace:
     def to_dict(self):
         out = {}
         d = self.__dict__
         for k, v in d.items():
-            if isinstance(v, _NameSpace):
+            if isinstance(v, NameSpace):
                 out[k] = v.to_dict()
             else:
                 out[k] = v
@@ -274,7 +267,7 @@ class _NameSpace:
         if d is None:
             d = self.__dict__
         for k, v in d.items():
-            if isinstance(v, _NameSpace):
+            if isinstance(v, NameSpace):
                 repr_str += (
                     "  " * nprefix
                     + f"{k}: \n"
@@ -298,7 +291,7 @@ def recursive_search_dict2namespace(d: Dict):
     :param d:
     :return:
     """
-    namespace = _NameSpace()
+    namespace = NameSpace()
     for k, v in d.items():
         if isinstance(v, dict):
             setattr(namespace, k, recursive_search_dict2namespace(v))
@@ -308,7 +301,7 @@ def recursive_search_dict2namespace(d: Dict):
     return namespace
 
 
-def merge_args_namespace(parser_args: argparse.Namespace, namespace_args: _NameSpace):
+def merge_args_namespace(parser_args: argparse.Namespace, namespace_args: NameSpace):
     """
     merge parser_args and self-made class _NameSpace configurations together for better
     usage.
