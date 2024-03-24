@@ -52,19 +52,20 @@ from model.LFormer import AttnFuseMain
 from model.lformer_reduced_swin_attn import AttnFuseMain
 # from model.lformer_ablation.LFormer_ablation_skip_attn import AttnFuseMain
 
-from model.reciprocal_transformer import DCT
+# from model.reciprocal_transformer import DCT
 
 from model.panMamba import ConditionalNAFNet
+from model.panMamba_ablation.panMamba_only_conv_NAF import ConditionalNAFNet
 
 # others
 # from model.GPPNN import GPPNN
 
-# TODO: dynamic importing
 import importlib
 import sys
 
 sys.path.append('./')
 
+# FIXME: may cause conficts with other arguments in args that rely on static registered model name in main.py
 def import_model_from_name(name):
     module = importlib.import_module(name, package='model')
     model_cls = getattr(module, name)

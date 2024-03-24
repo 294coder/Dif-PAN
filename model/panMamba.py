@@ -661,6 +661,7 @@ class MambaInjectionBlock(nn.Module):
             )
             # self.norm = norm_layer(inner_chan)
             self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
+            self.enhanced_factor._no_weight_decay = True
         
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
@@ -1296,25 +1297,8 @@ class ConditionalNAFNet(BaseModel):
             self.middle_rope.alter_seq_len(ft_img_size, rope.seq_len)
 
     def _forward_implem(self, inp, cond, c_shuffle=False):
-        # inp_res = inp.clone()
-
-        # if isinstance(time, int) or isinstance(time, float):
-        #     time = torch.tensor([time]).to(inp.device)
-
-        # x = inp - cond[:, :inp.shape[1]]
-        # x = torch.cat([x, cond], dim=1)
-        # x = torch.cat([inp, cond], dim=1)
         x = inp
         B, C, H, W = x.shape
-
-        # x_hwwh = torch.cat([x.view(B, -1, L),
-        #                       torch.transpose(x, dim0=2, dim1=3).contiguous().view(B, -1, L)],
-        #                       dim=1)
-        # x = torch.cat([x_hwwh, torch.flip(x_hwwh, dims=[-1])], dim=1) # (b, k, d, l)
-        # x = x.permute(0, 2, 1).contiguous()
-
-        # t = self.time_mlp(time)
-        # x = self.check_image_size(x)
 
         x = self.intro(x)
         if self.if_abs_pos:

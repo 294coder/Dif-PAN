@@ -36,9 +36,9 @@
 python main.py --proj_name panMamba --arch panMamba \
 -b 32 --device 'cuda:0' --dataset 'cave_x8' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'panMamba (with mamba in mamba) small config on cave_x8 dataset' \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset' \
 --logger_on --log_metrics \
---pretrain --pretrain_id 'fpcu26f3' #--non_load_strict
+--pretrain --pretrain_id 'o5dfjbfk' #--non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

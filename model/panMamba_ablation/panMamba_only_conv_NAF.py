@@ -952,8 +952,6 @@ class ConditionalNAFNet(BaseModel):
     def val_step(self, ms, lms, pan, patch_merge=None):
         if patch_merge is None:
             patch_merge = self.patch_merge
-            
-        c_shuffle = False
 
         if patch_merge:
             _patch_merge_model = PatchMergeModule(
@@ -963,10 +961,10 @@ class ConditionalNAFNet(BaseModel):
                 scale=self.upscale,
                 patch_merge_step=self.patch_merge_step,
             )
-            sr = _patch_merge_model.forward_chop(ms, lms, pan, c_shuffle=c_shuffle)[0] + lms
+            sr = _patch_merge_model.forward_chop(ms, lms, pan)[0] + lms
         else:
             self.alter_ropes(pan.shape[-1])
-            sr = self._forward_implem(lms, pan, c_shuffle) + lms
+            sr = self._forward_implem(lms, pan) + lms
             self.alter_ropes(self.pt_img_size)
 
         return sr

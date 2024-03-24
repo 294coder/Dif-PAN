@@ -42,7 +42,7 @@ def get_args():
 
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
-    parser.add_argument("--sub_arch", default="none", help="panformer sub-architecture name")
+    parser.add_argument("--sub_arch", default=None, help="panformer sub-architecture name")
 
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
@@ -114,7 +114,7 @@ def main(local_rank, args):
         print(args)
 
     # define network
-    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is None else args.arch
+    full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
     args.full_arch = full_arch
     network_configs = getattr(
         args.network_configs, full_arch, args.network_configs
