@@ -1001,7 +1001,9 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = torch.device("cuda:0")
+    # device = torch.device("cuda:0")
+    device = 'cuda:0'
+    torch.cuda.set_device(device)
     net = ConditionalNAFNet(
         img_channel=8,
         condition_channel=1,
@@ -1012,19 +1014,19 @@ if __name__ == "__main__":
         dec_blk_nums=[2]*3,
         pt_img_size=64,
         if_rope=False,
-    ).to(device)
+    ).cuda()
 
     img_size = 16
     scale = 4
-    ms = torch.randn(1, 8, img_size, img_size).to(device) 
-    img = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
-    cond = torch.randn(1, 1, img_size*scale, img_size*scale).to(device)
+    ms = torch.randn(1, 8, img_size, img_size).cuda()
+    img = torch.randn(1, 8, img_size*scale, img_size*scale).cuda()
+    cond = torch.randn(1, 1, img_size*scale, img_size*scale).cuda()
 
     # net = torch.compile(net)
     
     out = net._forward_once(img, cond)
     print(out.shape)
-    sr = torch.randn(1, 8, img_size*scale, img_size*scale).to(device)
+    sr = torch.randn(1, 8, img_size*scale, img_size*scale).cuda()
     loss = F.mse_loss(out, sr)
     print(loss)
     loss.backward()

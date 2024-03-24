@@ -33,10 +33,10 @@
 
 
 ## panMamba arch
-python main.py --proj_name panMamba --arch panMamba \
--b 128 --device 'cuda:1' --dataset 'wv3' \
+python main.py --proj_name lformer --arch lformer \
+-b 128 --device 'cuda:1' --dataset 'gf2' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 10 --comment 'panMamba (with mamba in mamba) small config on wv3 dataset' \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba (with mamba in mamba) small config on gf2 dataset' \
 --logger_on --log_metrics \
 # --pretrain --pretrain_id 'n95oo9f6' #--non_load_strict
 

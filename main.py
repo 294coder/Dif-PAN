@@ -355,7 +355,7 @@ def main(local_rank, args):
     print("network params are saved at {}".format(args.save_path))
 
     # save checker
-    save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
+    save_checker = BestMetricSaveChecker(metric_name="SAM", check_order="down")
 
     # start training 
     # TODO: use safetensor
