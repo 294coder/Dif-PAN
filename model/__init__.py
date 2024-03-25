@@ -57,6 +57,8 @@ from model.lformer_reduced_swin_attn import AttnFuseMain
 from model.panMamba import ConditionalNAFNet
 from model.panMamba_ablation.panMamba_only_conv_NAF import ConditionalNAFNet
 
+from model.panmamba_zhouman import Net
+
 # others
 # from model.GPPNN import GPPNN
 

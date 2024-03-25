@@ -625,8 +625,12 @@ class MambaInjectionBlock(nn.Module):
         self.local_shift_size = local_shift_size
         self.local_state_to_global = local_state_to_global
         
-        self.intro_conv = convs(in_chan, inner_chan, 'conv1')
-        self.intro_to_latent = nn.Linear(inner_chan*2, inner_chan, bias=False)
+        # v1: intro_conv
+        # self.intro_conv = convs(in_chan, inner_chan, 'conv1')
+        # self.intro_to_latent = nn.Linear(inner_chan*2, inner_chan, bias=False)
+        
+        # v2: intro_conv
+        self.intro_conv = convs(in_chan, inner_chan, 'conv3')
         
         # self.inner_to_outter_conv = nn.Linear(2*inner_chan, inner_chan)
         # self.lerp = nn.Sequential(LayerNorm(in_chan),
@@ -651,7 +655,7 @@ class MambaInjectionBlock(nn.Module):
                 ssm_conv=ssm_local_conv,
                 ssm_dt_rank=dt_rank,
                 ssm_ratio=1,
-                ssm_init='v2',
+                ssm_init='v0',
                 forward_type=forward_type,
                 use_checkpoint=use_ckpt,
                 prev_state_chan=None,
@@ -661,7 +665,6 @@ class MambaInjectionBlock(nn.Module):
             )
             # self.norm = norm_layer(inner_chan)
             self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
-            self.enhanced_factor._no_weight_decay = True
         
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
@@ -673,7 +676,7 @@ class MambaInjectionBlock(nn.Module):
             ssm_conv=ssm_global_conv,
             ssm_dt_rank=dt_rank,
             ssm_ratio=ssm_ratio,
-            ssm_init='v2',
+            ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
             # prev_state_gate=False,  # may use much gpu mem
@@ -711,8 +714,8 @@ class MambaInjectionBlock(nn.Module):
         # intro_conv v1: on cond
         cond = self.intro_conv(cond)
         cond = cond.permute(0, 2, 3, 1)
-        # x = feat + cond
-        x = self.intro_to_latent(torch.cat([feat, cond], dim=-1))
+        x = feat + cond
+        # x = self.intro_to_latent(torch.cat([feat, cond], dim=-1))
 
         # intro_conv v2: on catted feat and cond
         # cond = cond.permute(0, 2, 3, 1)
@@ -1306,11 +1309,11 @@ class ConditionalNAFNet(BaseModel):
 
         # x = self.square_relu(x)
         
-        naf_encs = []
-        for encoder, down in zip(self.naf_encoders, self.naf_downs):
-            x = encoder.NAF_enc_forward(x, cond)
-            naf_encs.append(x)
-            x = down(x)
+        # naf_encs = []
+        # for encoder, down in zip(self.naf_encoders, self.naf_downs):
+        #     x = encoder.NAF_enc_forward(x, cond)
+        #     naf_encs.append(x)
+        #     x = down(x)
 
         lemm_encs = []
         encs_states = []
@@ -1337,10 +1340,10 @@ class ConditionalNAFNet(BaseModel):
             x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, states, enc_state_skip)
             
         x = rearrange(x, 'b h w c -> b c h w')
-        for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
-            x = up(x)
-            x = torch.cat([x, enc_skip], dim=1)
-            x = decoder.NAF_dec_forward(x, cond)
+        # for decoder, up, enc_skip in zip(self.naf_decoders, self.naf_ups, naf_encs[::-1]):
+        #     x = up(x)
+        #     x = torch.cat([x, enc_skip], dim=1)
+        #     x = decoder.NAF_dec_forward(x, cond)
 
         x = self.ending(x)
 
@@ -1393,7 +1396,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:1"
+    device = "cuda:0"
     torch.cuda.set_device(device)
     
     # forwawrd_type v4 model: 5.917M
@@ -1415,9 +1418,9 @@ if __name__ == "__main__":
         ssm_ratios=[2,2,2],
         window_sizes=[8,8,8],
         ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
-        ssm_dec_d_states=[[None, 32], [None, 32], [None, 32]],
+        ssm_dec_d_states=[[None, 32], [16, 32], [16, 32]],
         ssm_enc_convs=[[5, 11], [5, 11], [None, 11]],
-        ssm_dec_convs=[[None, 11], [None, 11], [None, 11]],
+        ssm_dec_convs=[[None, 11], [5, 11], [5, 11]],
         
         pt_img_size=64,
         if_rope=False,

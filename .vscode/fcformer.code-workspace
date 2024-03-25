@@ -1,13 +1,13 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": "../"
 		},
 		{
-			"path": "../../datasets"
+			"path": "/Data2/ZiHanCao/datasets/"
 		},
 		{
-			"path": "../efficient-RWKV-Vmamba"
+			"path": "/Data2/ZiHanCao/exps/efficient-RWKV-Vmamba/"
 		}
 	],
 	"settings": {

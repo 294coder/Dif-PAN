@@ -827,7 +827,6 @@ class SS2D(nn.Module):
                 self.ssm_state_weight2 = None
             self.xs_gate_weight = nn.Parameter(torch.randn((k_group*d_state, d_inner, 1)))
             self.ssm_gate_ratio = nn.Parameter(torch.randn(1, k_group, d_inner, 1))
-            self.ssm_gate_ratio._no_weight_decay = True
             
             # bias here
             

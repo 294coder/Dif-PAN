@@ -4,7 +4,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 import numbers
+
+import sys
+sys.path.append('./')
+
 from mamba_ssm.modules.mamba_simple import Mamba
+from model.base_model import BaseModel, register_model
 
 
 #----------------- Refine Module--------------
@@ -550,11 +555,13 @@ class CrossMamba(nn.Module):
         self.dwconv = nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=dim)
     def forward(self,ms,ms_resi,pan):
         ms_resi = ms+ms_resi
+        # modified
         ms = self.norm1(ms_resi)
         pan = self.norm2(pan)
         global_f = self.cross_mamba(self.norm1(ms),extra_emb=self.norm2(pan))
         B,HW,C = global_f.shape
-        ms = global_f.transpose(1, 2).view(B, C, 128*8, 128*8)
+        H = W = int(math.sqrt(HW))
+        ms = global_f.transpose(1, 2).view(B, C, H, W)
         ms =  (self.dwconv(ms)+ms).flatten(2).transpose(1, 2)
         return ms,ms_resi
 class HinResBlock(nn.Module):
@@ -576,7 +583,9 @@ class HinResBlock(nn.Module):
         resi = torch.cat([self.norm(out_1), out_2], dim=1)
         resi = self.relu_2(self.conv_2(resi))
         return x+resi
-class Net(nn.Module):
+    
+@register_model('panmamba_zhouman')
+class Net(BaseModel):
     def __init__(self,num_channels=None,base_filter=None,args=None):
         super(Net, self).__init__()
         base_filter=32
@@ -584,7 +593,7 @@ class Net(nn.Module):
         self.stride=1
         self.patch_size=1
         self.pan_encoder = nn.Sequential(nn.Conv2d(1,base_filter,3,1,1),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter))
-        self.ms_encoder = nn.Sequential(nn.Conv2d(4,base_filter,3,1,1),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter))
+        self.ms_encoder = nn.Sequential(nn.Conv2d(num_channels,base_filter,3,1,1),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter),HinResBlock(base_filter,base_filter))
         self.embed_dim = base_filter*self.stride*self.patch_size
         self.shallow_fusion1 = nn.Conv2d(base_filter*2,base_filter,3,1,1)
         self.shallow_fusion2 = nn.Conv2d(base_filter*2,base_filter,3,1,1)
@@ -601,11 +610,12 @@ class Net(nn.Module):
         self.swap_mamba1 = TokenSwapMamba(self.embed_dim)
         self.swap_mamba2 = TokenSwapMamba(self.embed_dim)
         self.patchunembe = PatchUnEmbed(base_filter)
-        self.output = Refine(base_filter,4)
-    def forward(self,ms,_,pan):
+        self.output = Refine(base_filter,num_channels)
+    def _forward_implem(self,ms,pan):
 
-        ms_bic = F.interpolate(ms,scale_factor=4)
-        ms_f = self.ms_encoder(ms_bic)
+        # modifed
+        # ms_bic = F.interpolate(ms,scale_factor=4)
+        ms_f = self.ms_encoder(ms)
         # ms_f = ms_bic
         # pan_f = pan
         b,c,h,w = ms_f.shape
@@ -631,6 +641,49 @@ class Net(nn.Module):
         ms_f,residual_ms_f = self.deep_fusion4(ms_f,residual_ms_f,pan_f)
         ms_f,residual_ms_f = self.deep_fusion5(ms_f,residual_ms_f,pan_f)
         ms_f = self.patchunembe(ms_f,(h,w))
-        hrms = self.output(ms_f)+ms_bic
+        hrms = self.output(ms_f)+ms
         return hrms
+    
+    def train_step(self, ms, lms, pan, gt, criterion):
+        pred = self._forward_implem(lms, pan)
+
+        out = pred
+        loss = criterion(out, gt)
+        return out.clip(0, 1), loss
+
+    def val_step(self, ms, lms, pan, patch_merge=False):
+        assert not patch_merge, 'patch merge is not supported for validation'
+        
+        if  patch_merge:
+            pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
+        else:
+            pred = self._forward_implem(lms, pan)
+        out = pred + lms
+
+        return out.clip(0, 1)
+
+    def patch_merge_step(self, ms, lms, pan):
+        return self._forward_implem(lms, pan)
+    
+    
+if __name__ == '__main__':
+    torch.cuda.set_device(1)
+    
+    net = Net(8, 32).cuda()
+    
+    lms = torch.randn(1, 8, 64, 64).cuda()
+    pan = torch.randn(1, 1, 64, 64).cuda()
+    gt = torch.randn(1, 8, 64, 64).cuda()
+    
+    # print(net(lms, pan).shape)
+    sr = net._forward_implem(lms, pan)
+    loss = F.mse_loss(sr, gt)
+    loss.backward()
+    
+    print(loss)
+    
+    # from fvcore.nn import FlopCountAnalysis, flop_count_table
+    
+    # net.forward = net._forward_implem
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
 
