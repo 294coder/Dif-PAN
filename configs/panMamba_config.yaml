@@ -74,9 +74,9 @@ network_configs:
     ssm_ratios: [2,2,2]
     window_sizes: [8,8,8]
     ssm_enc_d_states: [[16, 32], [16, 32], [null, 32]]
-    ssm_dec_d_states: [[null, 32], [null, 32], [null, 32]]
+    ssm_dec_d_states: [[null, 32], [16, 32], [16, 32]]
     ssm_enc_convs: [[5, 11], [5, 11], [null, 11]]
-    ssm_dec_convs: [[null, 11], [null, 11], [null, 11]]
+    ssm_dec_convs: [[null, 11], [5, 11], [5, 11]]
     drop_path_rate: 0.1
 
     if_abs_pos: no # buggy: convergence is slow
