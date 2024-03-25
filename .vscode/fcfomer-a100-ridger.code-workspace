@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../"
+		},
+		{
+			"path": "../../../../dataset"
+		},
+		{
+			"path": "../../VMamba"
+		}
+	],
+	"settings": {
+		"files.autoSave": "afterDelay",
+		"editor.cursorSmoothCaretAnimation": "on"
+	}
+}
