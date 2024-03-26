@@ -25,20 +25,33 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-# python main.py --proj_name lformer_reduced --arch lformer \
-# -b 64 --device 'cuda:1' --dataset 'cave_x4' \
+# python main.py --proj_name lformer_reduced --arch lformer_R \
+# -b 4 --device 'cuda:0' --dataset 'wv3' \
 # --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'lformer reduced arch remove k norm on cave_x4 dataset' \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer arch without reduce on wv3 dataset' \
 # --logger_on --log_metrics \
 
+## MIMO_SST arch
+# python main.py --proj_name MIMO_SST --arch MIMO_SST \
+# -b 128 --device 'cuda:0' --dataset 'harvard_x8' \
+# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'MIMO_SST reduced arch on harvard_x8 dataset' \
+# --logger_on --log_metrics \
+
+## panMamba_zhouman arch
+# python main.py --proj_name panmamba_zhouman --arch panmamba_zhouman \
+# -b 128 --device 'cuda:1' --dataset 'wv3' \
+# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'panmamba_zhouman trained on wv3 dataset' \
+# --logger_on --log_metrics \
 
 ## panMamba arch
-python main.py --proj_name panmamba_zhouman --arch panmamba_zhouman \
--b 64 --device 'cuda:1' --dataset 'wv3' \
+python main.py --proj_name panMamba --arch panMamba \
+-b 32 --device 'cuda:0' --dataset 'cave_x8' \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'panmamba_zhouman small config on wv3 dataset' \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset using local shift and gmlp' \
 --logger_on --log_metrics \
-# --pretrain --pretrain_id 'o5dfjbfk' #--non_load_strict
+--pretrain --pretrain_id '5v9xqed9' --non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

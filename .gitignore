@@ -28,6 +28,7 @@
 /saliency/
 /.aim/
 /runs/
+/fcformer-weight/
 
 HyperSpectralToolbox/
 fc-former.zip

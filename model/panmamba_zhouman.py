@@ -646,10 +646,8 @@ class Net(BaseModel):
     
     def train_step(self, ms, lms, pan, gt, criterion):
         pred = self._forward_implem(lms, pan)
-
-        out = pred
-        loss = criterion(out, gt)
-        return out.clip(0, 1), loss
+        loss = criterion(pred, gt)
+        return pred.clip(0, 1), loss
 
     def val_step(self, ms, lms, pan, patch_merge=False):
         assert not patch_merge, 'patch merge is not supported for validation'
@@ -658,9 +656,8 @@ class Net(BaseModel):
             pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
         else:
             pred = self._forward_implem(lms, pan)
-        out = pred + lms
 
-        return out.clip(0, 1)
+        return pred.clip(0, 1)
 
     def patch_merge_step(self, ms, lms, pan):
         return self._forward_implem(lms, pan)
@@ -676,14 +673,14 @@ if __name__ == '__main__':
     gt = torch.randn(1, 8, 64, 64).cuda()
     
     # print(net(lms, pan).shape)
-    sr = net._forward_implem(lms, pan)
-    loss = F.mse_loss(sr, gt)
-    loss.backward()
+    # sr = net._forward_implem(lms, pan)
+    # loss = F.mse_loss(sr, gt)
+    # loss.backward()
     
-    print(loss)
+    # print(loss)
     
-    # from fvcore.nn import FlopCountAnalysis, flop_count_table
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
     
-    # net.forward = net._forward_implem
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    net.forward = net._forward_implem
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
 

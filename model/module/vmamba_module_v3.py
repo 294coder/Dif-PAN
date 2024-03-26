@@ -665,6 +665,18 @@ class PatchMerging2D(nn.Module):
         return x
 
 
+class LayerNorm2d(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
+
+    def forward(self, x):
+        eps = 1e-5 if x.dtype == torch.float32 else 1e-3
+        var = torch.var(x, dim=1, unbiased=False, keepdim=True)
+        mean = torch.mean(x, dim=1, keepdim=True)
+        return (x - mean) * (var + eps).rsqrt() * self.g
+
+
 class SS2D(nn.Module):
     def __init__(
         self,
@@ -783,6 +795,7 @@ class SS2D(nn.Module):
                 padding=(d_conv - 1) // 2,
                 **factory_kwargs,
             )
+            self.norm = LayerNorm2d(d_inner)
 
         # x proj ============================
         self.x_proj = [
@@ -1039,6 +1052,8 @@ class SS2D(nn.Module):
         x = x.permute(0, 3, 1, 2).contiguous()
         if with_dconv:
             x = self.conv2d(x) # (b, d, h, w)
+            # add norm. may stablize the training?
+            x = self.norm(x)
         x = self.act(x)
         
         y, ssm_state = self.forward_core(x, prev_state=prev_states, skip_state=skip_states)
@@ -1195,7 +1210,79 @@ class Mlp(nn.Module):
         x = self.fc2(x)
         x = self.drop(x)
         return x
+    
+class Linear2d(nn.Linear):
+    def forward(self, x: torch.Tensor):
+        # B, C, H, W = x.shape
+        return F.conv2d(x, self.weight[:, :, None, None], self.bias)
 
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+        state_dict[prefix + "weight"] = state_dict[prefix + "weight"].view(self.weight.shape)
+        return super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
+
+class gMlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,channels_first=False):
+        super().__init__()
+        self.channel_first = channels_first
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+
+        Linear = Linear2d if channels_first else nn.Linear
+        self.fc1 = Linear(in_features, 2 * hidden_features)
+        self.act = act_layer()
+        self.fc2 = Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x: torch.Tensor):
+        x = self.fc1(x)
+        x, z = x.chunk(2, dim=(1 if self.channel_first else -1))
+        x = self.fc2(x * self.act(z))
+        x = self.drop(x)
+        return x
+    
+class EinFFT(nn.Module):
+    def __init__(self, dim, mlp_ratio=2, drop=0.0):
+        super().__init__()
+        self.hidden_size = dim #768
+        self.num_blocks = 4 
+        self.block_size = self.hidden_size // self.num_blocks 
+        assert self.hidden_size % self.num_blocks == 0
+        self.sparsity_threshold = 0.01
+        self.scale = 0.02
+
+        self.complex_weight_1 = nn.Parameter(torch.randn(2, self.num_blocks, self.block_size, self.block_size, dtype=torch.float32) * self.scale)
+        self.complex_weight_2 = nn.Parameter(torch.randn(2, self.num_blocks, self.block_size, self.block_size, dtype=torch.float32) * self.scale)
+        self.complex_bias_1 = nn.Parameter(torch.randn(2, self.num_blocks, self.block_size,  dtype=torch.float32) * self.scale)
+        self.complex_bias_2 = nn.Parameter(torch.randn(2, self.num_blocks, self.block_size,  dtype=torch.float32) * self.scale)
+        
+        self.drop = nn.Dropout(drop)
+
+    def multiply(self, input, weights):
+        return torch.einsum('...bd,bdk->...bk', input, weights)
+
+    def forward(self, x):
+        B, H, W, C = x.shape
+        x = x.view(B, H, W, self.num_blocks, self.block_size)
+
+        x = torch.fft.fft2(x, dim=(-2, -1), norm='ortho') # FFT on N dimension
+
+        x_real_1 = F.relu(self.multiply(x.real, self.complex_weight_1[0]) - self.multiply(x.imag, self.complex_weight_1[1]) + self.complex_bias_1[0])
+        x_imag_1 = F.relu(self.multiply(x.real, self.complex_weight_1[1]) + self.multiply(x.imag, self.complex_weight_1[0]) + self.complex_bias_1[1])
+        x_real_2 = self.multiply(x_real_1, self.complex_weight_2[0]) - self.multiply(x_imag_1, self.complex_weight_2[1]) + self.complex_bias_2[0]
+        x_imag_2 = self.multiply(x_real_1, self.complex_weight_2[1]) + self.multiply(x_imag_1, self.complex_weight_2[0]) + self.complex_bias_2[1]
+
+        x = torch.stack([x_real_2, x_imag_2], dim=-1).float()
+        x = F.softshrink(x, lambd=self.sparsity_threshold) if self.sparsity_threshold else x
+        x = torch.view_as_complex(x)
+
+        x = torch.fft.ifft2(x, dim=(-2, -1), norm="ortho")
+        
+        # RuntimeError: "fused_dropout" not implemented for 'ComplexFloat'
+        x = x.to(torch.float32)
+        x = self.drop(x)
+        x = x.reshape(B, H, W, C)
+        return x
+    
 
 class VSSBlock(nn.Module):
     def __init__(
@@ -1216,6 +1303,7 @@ class VSSBlock(nn.Module):
         # =============================
         mlp_ratio=4.0,
         mlp_act_layer=nn.GELU,
+        mlp_type="gmlp",
         mlp_drop_rate: float = 0.0,
         # =============================
         use_checkpoint: bool = False,
@@ -1266,13 +1354,20 @@ class VSSBlock(nn.Module):
         if self.mlp_branch:
             self.norm2 = norm_layer(hidden_dim)
             mlp_hidden_dim = int(hidden_dim * mlp_ratio)
-            self.mlp = Mlp(in_features=hidden_dim, hidden_features=mlp_hidden_dim, act_layer=mlp_act_layer, drop=mlp_drop_rate, channels_first=False)
+            if mlp_type == "mlp":
+                self.mlp = Mlp(in_features=hidden_dim, hidden_features=mlp_hidden_dim, act_layer=mlp_act_layer, drop=mlp_drop_rate, channels_first=False)
+            elif mlp_type == 'gmlp':
+                self.mlp = gMlp(in_features=hidden_dim, hidden_features=mlp_hidden_dim, act_layer=mlp_act_layer, drop=mlp_drop_rate, channels_first=False)
+            elif mlp_type == "ein_ffn":
+                self.mlp = EinFFT(dim=hidden_dim, mlp_ratio=mlp_ratio, drop=mlp_drop_rate)
+            else:
+                raise NotImplementedError(f'mlp_type={mlp_type} is not implemented')
 
     def _forward(self, input: torch.Tensor, *ssm_state: tuple[torch.Tensor]):
         if self.ssm_branch:
             if self.post_norm:
                 x, ssm_state = self.op(input, *ssm_state)
-                x = input + self.drop_path(self.norm())
+                x = input + self.drop_path(self.norm(x))
             else:
                 x, ssm_state = self.op(self.norm(input), *ssm_state)
                 x = input + self.drop_path(x)
