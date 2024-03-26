@@ -1,13 +1,16 @@
 import functools
 import os.path
-from glob import glob
 from typing import Sequence
 
-import PIL.Image as Image
-import kornia.augmentation as K
 import torch
 import torch.utils.data as Data
+import numpy as np
 import torchvision.transforms as transforms
+from glob import glob
+import PIL.Image as Image
+
+import kornia.augmentation as K
+from copy import deepcopy
 
 
 class WindowBasedPadder(object):
@@ -26,11 +29,11 @@ class WindowBasedPadder(object):
                 least_size.append(mult * window_size)
         return least_size
 
-    def __call__(self, img: torch.Tensor, size: Sequence[int] = None, no_check_pad: bool = False):
+    def __call__(self, img: torch.Tensor, size: Sequence[int]=None, no_check_pad: bool = False):
         if no_check_pad:
             assert self.padding_fn is not None
             return self.padding_fn(img)
-
+        
         if size is not None:
             self._last_img_ori_size = size
             self.padding_fn = K.PadTo(size)
@@ -38,7 +41,7 @@ class WindowBasedPadder(object):
             pad_size = self.find_least_pad(img.shape[-2:], self.window_size)
             self._last_img_ori_size = img.shape[-2:]
             self.padding_fn = K.PadTo(pad_size)
-
+            
         return self.padding_fn(img)
 
     def inverse(self, img: torch.Tensor):
@@ -54,7 +57,7 @@ class TNODataset(Data.Dataset):
     """
 
     def __init__(
-            self, base_dir: str, mode: str, size: int = 64, no_split=False, aug_prob=0.0
+        self, base_dir: str, mode: str, size: int = 128, no_split=False, aug_prob=0.0
     ):
         assert mode in ["train", "validation", "test"]
         self.mode = mode
@@ -70,6 +73,7 @@ class TNODataset(Data.Dataset):
             vis_name = "vi"
         else:  # test
             mode = "test_data"
+            # mode = 'only_RS_testset'
             infrared_name = "ir"
             vis_name = "vi"
 
@@ -128,8 +132,8 @@ class TNODataset(Data.Dataset):
                 K.RandomVerticalFlip(p=aug_prob, keepdim=True),
                 K.RandomHorizontalFlip(p=aug_prob, keepdim=True),
                 # K.RandomRotation(degrees=(-15, 15), p=aug_prob, keepdim=True),
-                K.RandomBoxBlur(p=aug_prob / 4, keepdim=True),
-                K.RandomSharpness(0.2, p=aug_prob, keepdim=True),
+                # K.RandomBoxBlur(p=aug_prob / 4, keepdim=True),
+                # K.RandomSharpness(0.2, p=aug_prob, keepdim=True),
                 # K.RandomPlasmaContrast(roughness=(0.2, 0.6), p=aug_prob, keepdim=True),
                 # K.RandomPlasmaBrightness(p=aug_prob, keepdim=True),
                 data_keys=["input", "input", "input"],
@@ -168,56 +172,59 @@ class TNODataset(Data.Dataset):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
 
     dataset = TNODataset(
-        r"/home/ZiHanCao/datasets/RoadScene_and_TNO/",
+        r"/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/",
         "test",
         no_split=True,
         aug_prob=0.0,
     )
     dl = Data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=6)
-
+    
     img_padder = WindowBasedPadder(64)
+    
 
     h_max = 0
     w_max = 0
     for i, (ir, ms, vis, gt) in enumerate(dl):
         # print(ir.min(), vis.min(), gt.min())
         # print(ir.max(), vis.max(), gt.max())
-
+        
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
         axes = axes.flatten()
 
         print(ir.shape)
         ir_pad = img_padder(ir)
-
+        
         inv_ir = img_padder.inverse(ir_pad)
-
+        
         axes[0].imshow(ir[0].permute(1, 2, 0), "gray")
         axes[1].imshow(ir_pad[0].permute(1, 2, 0), "gray")
         axes[2].imshow(inv_ir[0].permute(1, 2, 0), "gray")
-
+        
         fig.savefig(f'./pad_{i}.png', dpi=200, bbox_inches='tight')
+        
 
-        # grid = gridspec.GridSpec(2, 2)
-        # axes = [
-        #     plt.subplot(grid[0, 0]),
-        #     plt.subplot(grid[0, 1]),
-        #     plt.subplot(grid[1, 0]),
-        #     plt.subplot(grid[1, 1]),
-        # ]
-        # axes[0].imshow(ir[0].permute(1, 2, 0), "gray")
-        # axes[0].set_title("ir")
-        # axes[1].imshow(ms[0].permute(1, 2, 0), "gray")
-        # axes[1].set_title("ms_vis")
-        # axes[2].imshow(vis[0].permute(1, 2, 0), "gray")
-        # axes[2].set_title("vis")
-        # # only show channel 3 image
-        # axes[3].imshow(torch.cat([gt[0], gt[0, 0:1]], dim=0).permute(1, 2, 0))
-        # axes[3].set_title("gt")
-        # plt.show()
-        # # fig = plt.gcf()
-        # # fig.savefig(f'./{i}.png')
-        #
+    # grid = gridspec.GridSpec(2, 2)
+    # axes = [
+    #     plt.subplot(grid[0, 0]),
+    #     plt.subplot(grid[0, 1]),
+    #     plt.subplot(grid[1, 0]),
+    #     plt.subplot(grid[1, 1]),
+    # ]
+    # axes[0].imshow(ir[0].permute(1, 2, 0), "gray")
+    # axes[0].set_title("ir")
+    # axes[1].imshow(ms[0].permute(1, 2, 0), "gray")
+    # axes[1].set_title("ms_vis")
+    # axes[2].imshow(vis[0].permute(1, 2, 0), "gray")
+    # axes[2].set_title("vis")
+    # # only show channel 3 image
+    # axes[3].imshow(torch.cat([gt[0], gt[0, 0:1]], dim=0).permute(1, 2, 0))
+    # axes[3].set_title("gt")
+    # plt.show()
+    # # fig = plt.gcf()
+    # # fig.savefig(f'./{i}.png')
+    #
         if i > 4:
             break

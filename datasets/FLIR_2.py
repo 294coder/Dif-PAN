@@ -1,11 +1,12 @@
 import functools
-from glob import glob
 
-import PIL.Image as Image
 import torch
 import torch.utils.data as Data
+import os
+import numpy as np
 import torchvision.transforms as transforms
-from torch.nn import Identity
+from glob import glob
+import PIL.Image as Image
 
 
 class FLIRDataset(Data.Dataset):
@@ -16,7 +17,7 @@ class FLIRDataset(Data.Dataset):
         vis, ms_vis, ir, gt(cat[ir, vis])
     """
 
-    def __init__(self, base_dir: str, mode: str, size: int = 64, no_split=False):
+    def __init__(self, base_dir: str, mode: str, size: int = 128, no_split=False):
         assert mode in ["train", "validation", "test"]
         self.mode = mode
         self.base_dir = base_dir
@@ -25,18 +26,19 @@ class FLIRDataset(Data.Dataset):
         if mode == "train":
             infrared_name = "infrared"
             vis_name = "visible"
-            suffix = 'jpg'
-            crop = True
-            sort_fn = lambda x: x
+            suffix='jpg'
         else:
             infrared_name = "ir test"
             vis_name = "vi test"
-            suffix = 'bmp'
-            crop = True
-            sort_fn = lambda x: sorted(x, key=lambda y: int(y.split('/')[-1].split('.')[0]))
+            suffix='bmp'
 
-        self.infrared_paths = sort_fn(glob(base_dir + f"/{mode}/{infrared_name}/*.{suffix}"))
-        self.vis_paths = sort_fn(glob(base_dir + f"/{mode}/{vis_name}/*.{suffix}"))
+        self.infrared_paths = glob(base_dir + f"/{mode}/{infrared_name}/*.{suffix}")
+        self.vis_paths = glob(base_dir + f"/{mode}/{vis_name}/*.{suffix}")
+        
+        if mode == 'test':
+            key = lambda x: int(os.path.basename(x.strip('.'+suffix)))
+            self.vis_paths.sort(key=key)
+            self.infrared_paths.sort(key=key)
 
         to_tensor = transforms.ToTensor()
 
@@ -51,11 +53,11 @@ class FLIRDataset(Data.Dataset):
             torch.cat([vis, ir], dim=0) for ir, vis in zip(self.ir_imgs, self.vis_imgs)
         ]
 
-        self.random_crop_ori = transforms.RandomCrop(size) if crop else Identity()
+        self.random_crop_ori = transforms.RandomCrop(size)
         self.down_sample = functools.partial(
             torch.nn.functional.interpolate, scale_factor=1 / 4, mode="bilinear"
         )
-        # self.random_crop_ms = transforms.RandomCrop(size // 4)
+        self.random_crop_ms = transforms.RandomCrop(size // 4)
 
     def __len__(self):
         return len(self.ir_imgs)
@@ -82,30 +84,33 @@ class FLIRDataset(Data.Dataset):
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
 
-    dataset = FLIRDataset(r"/Data2/ZiHanCao/datasets/RoadSceneFusion_1", "test")
-    dl = Data.DataLoader(dataset, batch_size=1, shuffle=False)
+    dataset = FLIRDataset(r"/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/RoadSceneFusion_1", "train")
+    dl = Data.DataLoader(dataset, batch_size=1, shuffle=True)
     for i, (ir, ms, vis, gt) in enumerate(dl):
-        # print(ir.max(), vis.max(), gt.max())
-        print(ir.shape, ms.shape, vis.shape, gt.shape)
+        print(ir.max(), vis.max(), gt.max())
 
-        # grid = gridspec.GridSpec(2, 2)
-        # axes = [
-        #     plt.subplot(grid[0, 0]),
-        #     plt.subplot(grid[0, 1]),
-        #     plt.subplot(grid[1, 0]),
-        #     plt.subplot(grid[1, 1]),
-        # ]
-        # axes[0].imshow(vis[0].permute(1, 2, 0), "gray")
-        # axes[0].set_title("ir")
-        # axes[1].imshow(ms[0].permute(1, 2, 0), "gray")
-        # axes[1].set_title("ms_vis")
-        # axes[2].imshow(ir[0].permute(1, 2, 0), "gray")
-        # axes[2].set_title("vis")
-        # # only show channel 3 image
-        # axes[3].imshow(torch.cat([gt[0], gt[0, 0:1]], dim=0).permute(1, 2, 0))
-        # axes[3].set_title("gt")
-        # plt.show()
+        grid = gridspec.GridSpec(2, 2)
+        axes = [
+            plt.subplot(grid[0, 0]),
+            plt.subplot(grid[0, 1]),
+            plt.subplot(grid[1, 0]),
+            plt.subplot(grid[1, 1]),
+        ]
+        axes[0].imshow(vis[0].permute(1, 2, 0), "gray")
+        axes[0].set_title("ir")
+        axes[1].imshow(ms[0].permute(1, 2, 0), "gray")
+        axes[1].set_title("ms_vis")
+        axes[2].imshow(ir[0].permute(1, 2, 0), "gray")
+        axes[2].set_title("vis")
+        # only show channel 3 image
+        axes[3].imshow(torch.cat([gt[0], gt[0, 0:1]], dim=0).permute(1, 2, 0))
+        axes[3].set_title("gt")
+        plt.show()
+        
+        plt.savefig(f'RS_test_{i}.png')
 
         if i > 10:
             break

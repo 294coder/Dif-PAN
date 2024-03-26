@@ -66,7 +66,6 @@ from utils.loss_utils import get_loss, accum_loss_dict, ave_ep_loss, ave_multi_r
 from utils.save_checker import BestMetricSaveChecker
 from utils.train_utils import get_fusion_dataset
 
-
 config_load = yaml_load
 
 if __name__ == "__main__":

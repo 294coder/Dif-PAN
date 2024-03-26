@@ -1081,13 +1081,21 @@ if __name__ == "__main__":
     # for n, m in net.named_modules():
     #     print(n, m)
     #     print('-'*20)
+    
+    # def params_and_flops_forward(*args):
+    #     def inner_fn(self):
+    #         return self.val_step(*args)
+        
+    #     return inner_fn
+    
+    # net.forward = params_and_flops_forward
 
     ms = torch.randn(1, 31, 16, 16).cuda(1)
     mms = torch.randn(1, 31, 64, 64).cuda(1)
     lms = torch.randn(1, 31, 64, 64).cuda(1)
     pan = torch.randn(1, 3, 64, 64).cuda(1)
 
-    print(net(pan, lms, mms, ms).shape)
+    # print(net(pan, lms, mms, ms).shape)
 
     # lr_hsi = torch.randn(1, 31, 128, 128)
     # rgb = torch.randn(1, 3, 512, 512)
@@ -1117,6 +1125,6 @@ if __name__ == "__main__":
 
     # block = BasicBlock2(8, 128, 8)
 
-    # print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
+    print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
     # print(flop_count_table(FlopCountAnalysis(block, (lms))))
     # block(lms)

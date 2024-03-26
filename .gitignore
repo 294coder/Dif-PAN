@@ -10,9 +10,6 @@
 /*/*/*/*.so
 /*/*/*/*.o
 /*/*/*/*.ninja
-/*/*/*/*/*.pyc
-/.cache/
-/.hypothesis/
 
 
 /.history/
@@ -32,5 +29,20 @@
 HyperSpectralToolbox/
 fc-former.zip
 _test.py
-nohup.out
-HyperSpectralToolbox
+nohup.o/.history/
+/.idea/
+/.ipynb_checkpoints/
+/.vscode/
+/__pycache__/
+/DLPan-Toolbox/
+/log_file/
+/loss_landscape/
+/matlab_metrcis/
+/media/
+/train_status/
+/visualized_img/
+/weight/
+/saliency/
+/runs/
+/Matlab-Test-Package/
+test.py

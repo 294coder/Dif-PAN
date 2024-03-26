@@ -27,11 +27,11 @@ from utils.visualize import invert_normalized
 
 device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "gf"
 save_format = "mat"
 full_res = False
-split_patch = False
-patch_size = 64
+split_patch = True
+patch_size = 16
 ergas_ratio = 4
 patch_size_list = [
     patch_size // ergas_ratio,
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "lformer"
+name = "panMamba"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -106,8 +106,6 @@ print("=" * 50)
 
 # p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
 # p = "./weight/lformer_dcu45ddw.pth"  # lformer
-
-p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
 # ========================================================
 
@@ -178,7 +176,7 @@ p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
 # p = './weight/lformer_3dvlsog6.pth'
 
-# p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 # =================================================
 
 # ===============QB checkpoint=====================

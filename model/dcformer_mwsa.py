@@ -511,7 +511,7 @@ class TransitionFPN(nn.Module):
                     128,
                     128,
                     kernel_size=3,
-                    stride=4,
+                    stride=2,
                     padding=1,
                     bias=False,
                     groups=128,  # 4

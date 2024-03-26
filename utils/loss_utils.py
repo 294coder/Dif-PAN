@@ -10,7 +10,7 @@ import numpy as np
 from math import exp
 import lpips
 
-# from utils.torch_dct import dct_2d, idct_2d
+from utils.torch_dct import dct_2d, idct_2d
 from utils._vgg import vgg16
 from utils._ydtr_loss import ssim_loss_ir, ssim_loss_vi, sf_loss_ir, sf_loss_vi
 
@@ -259,8 +259,6 @@ def ave_multi_rank_dict(rank_loss_dict: list[dict]):
         vs = 0
         for d in rank_loss_dict:
             v = d[k]
-            if isinstance(v, torch.Tensor):
-                v = v.item()
             vs = vs + v
         ave_dict[k] = vs / n
     return ave_dict
@@ -619,8 +617,8 @@ class HybridPIALoss(nn.Module):
         l1_int = (F.l1_loss(fuse, vis) + F.l1_loss(fuse, ir)) * self.weight_ratio[0]
         l1_aux = (F.l1_loss(fuse, gt.max(1, keepdim=True)[0])) * self.weight_ratio[1]
 
-        # FIXME: this should implement as the largest gradient of vis and ir_RS
-        # l1_grad = (F.l1_loss(gradient(fuse), gradient(vis)) + F.l1_loss(gradient(fuse), gradient(ir_RS))) * \
+        # FIXME: this should implement as the largest gradient of vis and ir
+        # l1_grad = (F.l1_loss(gradient(fuse), gradient(vis)) + F.l1_loss(gradient(fuse), gradient(ir))) * \
         #           self.weight_ratio[2]
         l1_grad = self._mcg_loss(fuse, ir, vis) * self.weight_ratio[2]
         percep_loss = (
@@ -912,8 +910,8 @@ class Sobelxy(nn.Module):
                   [-1, -2, -1]]
         kernelx = torch.FloatTensor(kernelx).unsqueeze(0).unsqueeze(0)
         kernely = torch.FloatTensor(kernely).unsqueeze(0).unsqueeze(0)
-        self.weightx = nn.Parameter(data=kernelx, requires_grad=False)#.cuda()
-        self.weighty = nn.Parameter(data=kernely, requires_grad=False)#.cuda()
+        self.weightx = nn.Parameter(data=kernelx, requires_grad=False).cuda()
+        self.weighty = nn.Parameter(data=kernely, requires_grad=False).cuda()
 
     def forward(self,x):
         sobelx=F.conv2d(x, self.weightx, padding=1)
@@ -949,9 +947,7 @@ class SwinFusionLoss(nn.Module):
         self.L_Inten = L_Intensity()
         self.L_SSIM = L_SSIM()
         
-    def forward(self, image_fused, gt):
-        image_A = gt[:, 0:1]
-        image_B = gt[:, 1:]
+    def forward(self, image_A, image_B, image_fused):
         loss_l1 = 20 * self.L_Inten(image_A, image_B, image_fused)
         loss_gradient = 20 * self.L_Grad(image_A, image_B, image_fused)
         loss_SSIM = 10 * (1 - self.L_SSIM(image_A, image_B, image_fused))
@@ -980,32 +976,17 @@ class CDDFusionLoss(nn.Module):
         loss_d = dict(l1_loss=l1_loss, dct_loss=dct_loss, mcg_loss=mcg_loss)
 
         return l1_loss + dct_loss + mcg_loss, loss_d
-    
-    
-def HPM_gradient_diff(Pred, GT):  
-    R = F.pad(GT, [0, 1, 0, 0])[:, :, :, 1:] 
-    B = F.pad(GT, [0, 0, 0, 1])[:, :, 1:, :]
-    dx1, dy1 = torch.abs(R - GT), torch.abs(B - GT)
-    dx1[:, :, :, -1], dy1[:, :, -1, :] = 0, 0 
-    R = F.pad(Pred, [0, 1, 0, 0])[:, :, :, 1:] 
-    B = F.pad(Pred, [0, 0, 0, 1])[:, :, 1:, :]
-    dx2, dy2 = torch.abs(R - Pred), torch.abs(B - Pred)
-    dx2[:, :, :, -1], dy2[:, :, -1, :] = 0, 0   
-    res = torch.abs(dx2-dx1)+torch.abs(dy2-dy1)
-    return res.mean()
 
 
 def get_loss(loss_type, channel=31):
     if loss_type == "mse":
-        criterion = TorchLossWrapper((1., ), mse=nn.MSELoss())  # nn.MSELoss()
+        criterion = nn.MSELoss()
     elif loss_type == "l1":
         criterion = TorchLossWrapper((1.,), l1=nn.L1Loss())
     elif loss_type == "hybrid":
         criterion = HybridL1L2()
     elif loss_type == "smoothl1":
         criterion = nn.SmoothL1Loss()
-    elif loss_type == 'hpm':
-        criterion = TorchLossWrapper((1., 0.3), l1=nn.L1Loss(), grad_loss=HPM_gradient_diff)
     elif loss_type == "l1ssim":
         criterion = HybridL1SSIM(channel=channel, weighted_r=(1.0, 0.1))
     elif loss_type == "ssimrmi_fuse":
@@ -1037,22 +1018,19 @@ def get_loss(loss_type, channel=31):
 if __name__ == "__main__":
     # loss = SSIMLoss(channel=31)
     # loss = CharbonnierLoss(eps=1e-3)
-    
-    loss = get_loss("hpm")
-    
-    x = torch.randn(1, 31, 64, 64, requires_grad=True)
-    y = x + torch.randn(1, 31, 64, 64) / 10
-    l = loss(x, y)
-    l.backward()
-    print(l)
-    print(x.grad)
+    # x = torch.randn(1, 31, 64, 64, requires_grad=True)
+    # y = x + torch.randn(1, 31, 64, 64) / 10
+    # l = loss(x, y)
+    # l.backward()
+    # print(l)
+    # print(x.grad)
 
     import PIL.Image as Image
 
     vi = (
         np.array(
             Image.open(
-                "/Data2/ZiHanCao/datasets/RoadScene_and_TNO/training_data/vi/FLIR_05857.jpg"
+                "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/vi/FLIR_05857.jpg"
             ).convert("L")
         )
         / 255
@@ -1060,7 +1038,7 @@ if __name__ == "__main__":
     ir = (
         np.array(
             Image.open(
-                "/Data2/ZiHanCao/datasets/RoadScene_and_TNO/training_data/ir_RS/FLIR_05857.jpg"
+                "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/ir/FLIR_05857.jpg"
             ).convert("L")
         )
         / 255
@@ -1080,8 +1058,7 @@ if __name__ == "__main__":
     # fuse_loss = HybridSSIMRMIFuse(weight_ratio=(1.0, 1.0, 1.0), ssim_channel=1)
     # fuse_loss = U2FusionLoss().cuda(1)
     # fuse_loss = HybridPIALoss().cuda(1)
-    # fuse_loss = CDDFusionLoss()  # .cuda()
-    fuse_loss = SwinFusionLoss()
+    fuse_loss = CDDFusionLoss()  # .cuda()
     loss, loss_d = fuse_loss(fuse, gt)
     loss.backward()
     print(loss)

@@ -83,11 +83,9 @@ class ReflashAttn(nn.Module):
     def __init__(self, nhead=8, ksize=5):
         super().__init__()
         self.body = nn.Sequential(
-            nn.Conv2d(
-                nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False
-            ),
+            nn.Conv2d(nhead, nhead, (1, ksize), stride=1, padding=(0, ksize // 2), bias=False),
             nn.Conv2d(nhead, nhead, 1, bias=True),
-            nn.ReLU(),
+            nn.ReLU()
         )
         self.body[0].weight.data.fill_(1.0 / (ksize * ksize))
         self.body[1].weight.data.fill_(1.0)
@@ -101,10 +99,9 @@ class ReflashAttn(nn.Module):
 # 1. 不加resblock换v
 # 2. 加上resblok不换v
 
-
 class AttnFuse(nn.Module):
     def __init__(
-        self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False
+            self, pan_dim, lms_dim, inner_dim, nheads=8, attn_drop=0.2, first_layer=False
     ) -> None:
         super().__init__()
         self.nheads = nheads
@@ -140,10 +137,9 @@ class AttnFuse(nn.Module):
         self.ms_pre_norm = LayerNorm2d(lms_dim)
         self.pan_pre_norm = LayerNorm2d(pan_dim)
         self.pan_feature_update = nn.Sequential(
-            nn.Conv2d(pan_dim, inner_dim, 3, 1, 1),
-            nn.ReLU(),
-            nn.Conv2d(inner_dim, inner_dim, 3, 1, 1),
-        )  # modified by hjm
+                nn.Conv2d(pan_dim, inner_dim, 3, 1, 1),
+                nn.ReLU(),
+                nn.Conv2d(inner_dim, inner_dim, 3, 1, 1))  # modified by hjm
         self.attn_drop = nn.Dropout(attn_drop)
 
     def forward(self, lms, pan):
@@ -183,7 +179,7 @@ class MSReversibleRefine(nn.Module):
             nn.Sequential(
                 nn.Conv2d(dim, dim, 3, 1, 1, groups=dim),
                 nn.ReLU(),
-                nn.Conv2d(dim, dim, 1),
+                nn.Conv2d(dim, dim, 1)
                 # nn.BatchNorm2d(dim),
             )
         )
@@ -211,20 +207,11 @@ class MSReversibleRefine(nn.Module):
             q = einops.rearrange(lms, "b (nhead c) h w -> b nhead c (h w)", nhead=8)
             k, v = self.kv_conv(pan).chunk(2, dim=1)
             # print(k.shape)
-            k, v = map(
-                lambda x: einops.rearrange(
-                    x, "b (nhead c) h w -> b nhead c (h w)", nhead=8
-                ),
-                (k, v),
-            )
+            k, v = map(lambda x: einops.rearrange(x, "b (nhead c) h w -> b nhead c (h w)", nhead=8), (k, v))
 
-            attn = torch.einsum("b h d n, b h e n -> b h d e", q, k).softmax(
-                -1
-            )  # lms x pan
+            attn = torch.einsum("b h d n, b h e n -> b h d e", q, k).softmax(-1)  # lms x pan
 
-            refined_lms = torch.einsum(
-                "b h d e, b h e m -> b h d m", attn, v
-            )  # (lms x pan) x lms
+            refined_lms = torch.einsum("b h d e, b h e m -> b h d m", attn, v)  # (lms x pan) x lms
             refined_lms = rearrange(
                 refined_lms,
                 "b nhead c (h w) -> b (nhead c) h w",
@@ -289,7 +276,7 @@ class HpBranch(nn.Module):
             nn.Sequential(
                 nn.Conv2d(hp_dim, hp_dim, 3, 1, 1, groups=hp_dim),
                 nn.ReLU(),
-                nn.Conv2d(hp_dim, hp_dim, 1),
+                nn.Conv2d(hp_dim, hp_dim, 1)
                 # nn.BatchNorm2d(hp_dim),
             )
         )
@@ -329,7 +316,7 @@ class AttnFuseMain(BaseModel):
         self.final_conv = nn.Sequential(
             Resblock(hp_dim * 2),
             Resblock(hp_dim * 2),
-            nn.Conv2d(hp_dim * 2, lms_dim, 1),
+            nn.Conv2d(hp_dim * 2, lms_dim, 1)
         )
 
     def _forward_implem(self, lms, pan):
@@ -380,9 +367,7 @@ if __name__ == "__main__":
 
     loss = nn.MSELoss()
 
-    net = AttnFuseMain(
-        pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5
-    )  # .cuda(1)
+    net = AttnFuseMain(pan_dim=1, lms_dim=8, attn_dim=64, hp_dim=64, n_stage=5)  # .cuda(1)
 
     pred = net._forward_implem(lms, pan)
     # l = loss(pred, gt)

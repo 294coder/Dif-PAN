@@ -7,6 +7,8 @@ from einops import rearrange
 import sys
 sys.path.append('./')
 
+import sys
+sys.path.append('./')
 from model.base_model import register_model, BaseModel
 from utils import get_local
 
@@ -474,7 +476,6 @@ if __name__ == "__main__":
     # Pavia: 102/1
     # botswana: 145/1
     # chikusei: 128/3
-
     # num_p = 0
     # for p in net.parameters():
     #     if p.requires_grad:
