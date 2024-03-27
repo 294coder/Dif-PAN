@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from einops import rearrange
+from typing import Union
 
 import sys
 sys.path.append('./')
@@ -139,6 +140,27 @@ def window_reverse(windows, window_size, H, W):
 # 1. 不加resblock换v
 # 2. 加上resblok不换v
 
+def get_reduce_op(r_op, inner_dim):
+    IMG_SIZR = 64
+    _down_size = 4
+    OP_SIZE = (IMG_SIZR // _down_size, IMG_SIZR // _down_size)
+    
+    if r_op is None or r_op == 'pixelshuffle':
+        r_op = nn.PixelShuffle(scale=4)
+    elif r_op == 'patchembed_kv':
+        # only k, v
+        r_op = nn.ModuleList([nn.Conv2d(inner_dim, inner_dim, _down_size, _down_size, 0, groups=inner_dim) for _ in range(2)])
+    elif r_op == 'patchembed_v':
+        r_op = nn.Conv2d(inner_dim, inner_dim, _down_size, _down_size, 0, groups=inner_dim)
+    elif r_op == 'adap_pool':
+        r_op = nn.AdaptiveAvgPool2d(OP_SIZE)
+    elif callable(r_op):
+        r_op = r_op
+    else:
+        raise ValueError('r_op must be set to a callable function or string "pixelshuffle" or "patchembed"')
+    
+    return r_op
+
 
 class FirstAttn(nn.Module):
     def __init__(
@@ -152,30 +174,35 @@ class FirstAttn(nn.Module):
         *,
         attn_type='W',
         window_size=16,
-        r_op:callable=None
+        r_op:Union[callable, str]=None
     ) -> None:
         super().__init__()
         self.nheads = nheads
         self.first_layer = first_layer
+        self._r_op = r_op
         
         assert attn_type in ['R', 'W', 'I'], 'R is reduced attn, W is window attn, I is tranditional attn'
         if attn_type == 'W': 
             assert window_size is not None, 'window_size should be given'
         elif attn_type == 'R':
-            self.r_op = r_op
+            # self.r_op = get_reduce_op(r_op, inner_dim)
+            pass
         else:
             self.r_op = nn.Identity()
+            raise ValueError('64x64 image absolutly cause GPU OOM')
+        
         self.attn_type = attn_type
         self.ws = window_size
 
         self.rearrange = Rearrange("b (nhead c) h w -> b nhead c (h w)", nhead=nheads)
         self.q = nn.Sequential(
-            nn.Conv2d(pan_dim, inner_dim, 1, bias=True),
+            # nn.Conv2d(pan_dim, inner_dim, 1, bias=True),
             nn.Conv2d(inner_dim, inner_dim, 3, 1, 1, groups=inner_dim),
         )
         self.kv = nn.Sequential(
-            nn.Conv2d(lms_dim, inner_dim * 2, 1, bias=True),
-            nn.Conv2d(inner_dim * 2, inner_dim * 2, 3, 1, 1, groups=inner_dim * 2),
+            # nn.Conv2d(lms_dim, inner_dim * 2, 1, bias=True),
+            # nn.Conv2d(inner_dim * 2, inner_dim * 2, 3, 1, 1, groups=inner_dim * 2),
+            nn.Conv2d(inner_dim, inner_dim * 2, 3, 1, 1, groups=inner_dim),
         )
         if first_layer:
             self.q.append(
@@ -195,9 +222,12 @@ class FirstAttn(nn.Module):
                 )
             )
 
-        self.ms_pre_norm = LayerNorm2d(lms_dim)
-        self.pan_pre_norm = LayerNorm2d(pan_dim)
+        # self.ms_pre_norm = LayerNorm2d(lms_dim)
+        # self.pan_pre_norm = LayerNorm2d(pan_dim)
 
+        self.ms_pre_norm = LayerNorm2d(inner_dim)
+        self.pan_pre_norm = LayerNorm2d(inner_dim)
+        
         self.attn_drop = nn.Dropout(attn_drop)
         
     def R_attn_forwawrd(self, lms, pan):
@@ -209,7 +239,11 @@ class FirstAttn(nn.Module):
         q = self.q(pan)  # q: pan
         k, v = self.kv(lms).chunk(2, dim=1)  # kv: lms
         
-        k, v = self.r_op(k), self.r_op(v)
+        # if self._r_op[:10] == 'patchembed':
+        #     k = self.r_op[0](k)
+        #     v = self.r_op[1](v)
+        # else:
+        #     k, v = self.r_op(k), self.r_op(v)
         
         q, k, v = map(lambda x: self.rearrange(x), (q, k, v))
         
@@ -268,11 +302,10 @@ class MSReversibleRefine(nn.Module):
                  first_stage=False,
                  window_size=16,
                  attn_type='W',
-                 r_op:callable=None) -> None:
+                 r_op:callable=nn.PixelShuffle(4)) -> None:
         super().__init__()
         if attn_type == 'R':
-            if r_op is None:
-                raise ValueError('r_op must be set to a callable function')
+            r_op = get_reduce_op(r_op, dim)
         
         self.attn_type = attn_type
         self.ws = window_size
@@ -294,7 +327,6 @@ class MSReversibleRefine(nn.Module):
 
     # @get_local("reflashed_attn", "reflashed_out")
     def forward(self, reused_attn, refined_lms, hp_in):
-        *_, h, w = refined_lms.shape
 
         if not self.first_stage:
             reused_attn = self.reflash_attn(reused_attn)
@@ -314,7 +346,8 @@ class MSReversibleRefine(nn.Module):
                 )
                 refined_lms = window_reverse(refined_lms, self.ws, h, w)
             else:
-                refined_lms = self.r_op(refined_lms)
+                refined_lms = self.r_op(refined_lms)  # serve as v
+                *_, h, w = refined_lms.shape
                 refined_lms = rearrange(refined_lms, "b (nhead c) h w -> b nhead c (h w)", nhead=self.nhead)
 
                 refined_lms = torch.einsum(
@@ -330,6 +363,7 @@ class MSReversibleRefine(nn.Module):
             
             
         # reflashed_attn = reuse_attn
+        refined_lms = F.interpolate(refined_lms, size=hp_in.shape[-2:], mode='bilinear', align_corners=True)
         reflashed_out = refined_lms
         refined_lms = self.res_block(refined_lms)
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
@@ -391,6 +425,7 @@ class HpBranch(nn.Module):
 
     def forward(self, refined_lms, hp_in):
         attn_hp = self.attn_hp_conv(refined_lms)
+        attn_hp = F.interpolate(attn_hp, size=hp_in.shape[-2:], mode='bilinear', align_corners=True)
         x = torch.cat([attn_hp, hp_in], dim=1)
         hp_out = self.res_block(self.to_hp_dim(x))
         return hp_out
@@ -411,17 +446,17 @@ class AttnFuseMain(BaseModel):
         patch_size_list=None,
         scale=4,
         attn_type='R',
-        r_op=nn.Identity(),
+        r_op='patchembed_v',
     ) -> None:
         super().__init__()
         self.n_stage = n_stage
 
-        if attn_type == 'R' and r_op is None:
-            # TODO: input img_size?
-            r_op = nn.AdaptiveAvgPool2d((16, 16))
-            
-        self.attn = FirstAttn(pan_dim, lms_dim, attn_dim, first_layer=False, attn_type=attn_type, r_op=r_op)
+        self.attn = FirstAttn(attn_dim, attn_dim, attn_dim, first_layer=False, attn_type=attn_type)
         self.pre_hp = PreHp(pan_dim, lms_dim, hp_dim)
+        
+        if r_op[:10] == 'patchembed':
+            self.patch_embed_lms = nn.Conv2d(lms_dim, attn_dim, 4, 4, 0)
+            self.patch_embed_pan = nn.Conv2d(pan_dim, attn_dim, 4, 4, 0)
 
         self.refined_blocks = nn.ModuleList([])
         self.hp_branch = nn.ModuleList([])
@@ -441,19 +476,19 @@ class AttnFuseMain(BaseModel):
         )
 
         self.patch_merge = patch_merge
-        if patch_merge:
-            from model.base_model import PatchMergeModule
-
-            self._patch_merge_model = PatchMergeModule(
-                # net=self,
-                patch_merge_step=self.patch_merge_step,
-                crop_batch_size=crop_batch_size,
-                patch_size_list=patch_size_list,
-                scale=scale,
-            )
+        self.crop_batch_size=crop_batch_size
+        self.patch_size_list=patch_size_list
+        self.scale=scale
 
     def _forward_implem(self, lms, pan):
-        reused_attn, refined_lms = self.attn(lms, pan)
+        if hasattr(self, 'patch_embed_lms'):
+            _lms = self.patch_embed_lms(lms)
+            _pan = self.patch_embed_pan(pan)
+        else:
+            _lms = lms
+            _pan = pan
+        
+        reused_attn, refined_lms = self.attn(_lms, _pan)
         pre_hp = self.pre_hp(lms, pan)
         # print(reused_attn.shape)
         for i in range(self.n_stage):
@@ -478,6 +513,17 @@ class AttnFuseMain(BaseModel):
         return out.clip(0, 1), loss
 
     def val_step(self, ms, lms, pan, patch_merge=True):
+        if patch_merge:
+            from model.base_model import PatchMergeModule
+
+            self._patch_merge_model = PatchMergeModule(
+                # net=self,
+                patch_merge_step=self.patch_merge_step,
+                crop_batch_size=self.crop_batch_size,
+                patch_size_list=self.patch_size_list,
+                scale=self.scale,
+            )
+        
         if self.patch_merge and patch_merge:
             pred = self._patch_merge_model.forward_chop(ms, lms, pan)[0]
         else:
@@ -498,7 +544,8 @@ if __name__ == "__main__":
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
     
-    torch.cuda.set_device(0)
+    device = 'cuda:0'
+    torch.cuda.set_device(device)
 
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
@@ -510,7 +557,7 @@ if __name__ == "__main__":
     net = AttnFuseMain(
         pan_dim=1,
         lms_dim=8,
-        attn_dim=64,
+        attn_dim=32,
         hp_dim=64,
         n_stage=5,
         patch_merge=False,
@@ -518,11 +565,11 @@ if __name__ == "__main__":
         scale=4,
         crop_batch_size=32,
         attn_type='R',
-        r_op=nn.Identity(), #nn.AdaptiveAvgPool2d((16, 16))
+        r_op='patchembed_v',
     ).cuda()
     net.forward = partial(_only_for_flops_count_forward, net)
 
-    sr = net.val_step(ms, lms, pan)
+    # sr = net.val_step(ms, lms, pan)
     sr = net._forward_implem(lms, pan)
     loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
     print(sr.shape)
@@ -531,10 +578,10 @@ if __name__ == "__main__":
     #     if m.grad is None:
     #         print(f'{n} has no grad')
     
-    print(torch.cuda.memory_summary(device=0))
+    # print(torch.cuda.memory_summary(device))
 
-    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    # print(net(lms, pan).shape)
+    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
     # Pavia: 102/1

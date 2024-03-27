@@ -1400,7 +1400,7 @@ if __name__ == "__main__":
     #=======================
     
     net.eval()
-    for img_sz in [64, 128, 256, 512, 1024]:
+    for img_sz in [64]:
         scale = 4
         gt_img_sz = img_sz // scale
         chan = 8
@@ -1430,7 +1430,7 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        print(torch.cuda.memory_summary(device=device))
+        # print(torch.cuda.memory_summary(device=device))
 
         from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
 

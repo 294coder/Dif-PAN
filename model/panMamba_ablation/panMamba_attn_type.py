@@ -28,7 +28,7 @@ sys.path.append("../")
 
 # from mamba_ssm import Mamba
 from model.module.vmamba_module_v3 import VSSBlock
-from model.module.layer_norm import NAFLayerNorm as LayerNorm2d
+from model.module.layer_norm import NAFLayerNorm as LayerNorm
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 
@@ -260,7 +260,7 @@ class PreNorm(nn.Module):
     def __init__(self, dim, fn):
         super().__init__()
         self.fn = fn
-        self.norm = LayerNorm2d(dim)
+        self.norm = LayerNorm(dim)
 
     def forward(self, x):
         x = self.norm(x)
@@ -336,7 +336,7 @@ class LinearAttention(nn.Module):
         hidden_dim = dim_head * heads
 
         self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
-        self.to_out = nn.Sequential(nn.Conv2d(hidden_dim, dim, 1), LayerNorm2d(dim))
+        self.to_out = nn.Sequential(nn.Conv2d(hidden_dim, dim, 1), LayerNorm(dim))
 
     def forward(self, x):
         b, c, h, w = x.shape
@@ -879,8 +879,8 @@ class NAFBlock(nn.Module):
             bias=True,
         )
 
-        self.norm1 = LayerNorm2d(c)
-        self.norm2 = LayerNorm2d(c)
+        self.norm1 = LayerNorm(c)
+        self.norm2 = LayerNorm(c)
 
         self.dropout1 = (
             nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()

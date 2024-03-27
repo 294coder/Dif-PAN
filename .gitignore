@@ -1,15 +1,20 @@
 /ir_RS/
-/__pycache__/
-/*/__pycache__/
-/*/*/__pycache__/
-/__pycache__/
+/__pycache__/*
+/*/__pycache__/*
+/*/*/__pycache__/*
+/*/*/*/__pycache__/*
+/*/*/*/*/__pycache__/*
+**/__pycache__
 /*.zip
 /.idea
 /.cache/
 /ir_TNO/
-/*/*/*/*.so
-/*/*/*/*.o
-/*/*/*/*.ninja
+*.so
+*.o
+*.ninja_deps
+*.ninja_log
+*build.ninja
+
 
 
 /.history/

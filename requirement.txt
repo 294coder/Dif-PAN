@@ -19,6 +19,7 @@ torchsummary
 fvcore
 tensorboard
 colored_traceback
+transformers
 
 
 

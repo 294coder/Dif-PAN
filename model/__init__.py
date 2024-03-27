@@ -59,7 +59,7 @@ from model.panMamba_ablation.panMamba_only_conv_NAF import ConditionalNAFNet
 
 
 from model.MIMO_SST import Net
-from model.panmamba_zhouman import Net
+# from model.panmamba_zhouman import Net
 
 from model.panRWKV import ConditionalNAFNet
 
