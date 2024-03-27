@@ -1032,8 +1032,8 @@ if __name__ == "__main__":
 
     # net = MambaBlock(4).to(device)
 
-    # net.eval()
-    for img_sz in [64]:
+    net.eval()
+    for img_sz in [64, 128, 256, 512, 1024]:
         scale = 4
         gt_img_sz = img_sz // scale
         chan = 8
@@ -1063,11 +1063,12 @@ if __name__ == "__main__":
         # sr = net.val_step(ms, img, cond)
         # print(sr.shape)
 
-        # print(torch.cuda.memory_summary(device=device))
+        print(torch.cuda.memory_summary(device=device))
 
-        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table
+        from fvcore.nn import flop_count_table, FlopCountAnalysis, parameter_count_table, flop_count_str
 
         net.forward = net._forward_implem
         flops = FlopCountAnalysis(net, (img, cond))
         # flops.set_op_handle(**supported_ops)
-        print(flop_count_table(flops, max_depth=3))
+        # print(flop_count_table(flops, max_depth=3))
+        print(flop_count_str(flops.total()))

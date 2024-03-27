@@ -611,11 +611,14 @@ class MambaInjectionBlock(nn.Module):
         dt_rank="auto",
         ssm_conv=[3, 11],
         ssm_ratio=2,
-        mlp_ratio=4,
+        mlp_ratio=2,
         forward_type="v4",
         use_ckpt=False,
         local_shift_size=0,
-        prev_state_gate=False,
+        prev_state_chan=None,
+        skip_state_chan=None,
+        local_state_to_global=False,
+        post_norm=False,
         **mamba_kwargs,
     ):
         super().__init__()
@@ -633,28 +636,38 @@ class MambaInjectionBlock(nn.Module):
         #                           nn.Conv2d(in_chan, inner_chan*2, 1),
         #                           Rearrange('b c 1 1 -> b 1 1 c'))
         
+        ssm_local_conv, ssm_global_conv = ssm_conv[0], ssm_conv[1]
+        local_d_state, global_d_state = d_states[0], d_states[1]
+        
+        # v3: mamba in mamba
+        if local_d_state is not None and ssm_local_conv is not None:
+            self.local_state_to_global = False
+            
+            self.mamba_inner_shared = VSSBlock(
+                inner_chan,
+                drop_path=drop_path,
+                mlp_ratio=1,
+                norm_layer=norm_layer,
+                mlp_drop_rate=0.0,
+                ssm_d_state=local_d_state,
+                ssm_conv=ssm_local_conv,
+                ssm_dt_rank=dt_rank,
+                ssm_ratio=1,
+                ssm_init='v2',
+                forward_type=forward_type,
+                use_checkpoint=use_ckpt,
+                prev_state_chan=None,
+                skip_state_chan=None,
+                post_norm=post_norm,
+                mlp_type='gmlp',
+                # prev_state_gate=prev_state_gate,
+                **mamba_kwargs,
+            )
+            # self.norm = norm_layer(inner_chan)
+            self.enhanced_factor = nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True)
         
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
-            drop_path=drop_path,
-            mlp_ratio=mlp_ratio,
-            norm_layer=norm_layer,
-            mlp_drop_rate=mlp_drop,
-            ssm_d_state=d_state,
-            ssm_conv=ssm_conv,
-            ssm_dt_rank=dt_rank,
-            ssm_ratio=ssm_ratio,
-            ssm_init='v0',
-            forward_type=forward_type,
-            use_checkpoint=use_ckpt,
-            prev_state_gate=prev_state_gate,
-            **mamba_kwargs,
-        )
-        
-
-        # v3: mamba in mamba
-        self.mamba_inner_shared = VSSBlock(
-            inner_chan,
             drop_path=drop_path,
             mlp_ratio=1,
             norm_layer=norm_layer,
@@ -666,7 +679,11 @@ class MambaInjectionBlock(nn.Module):
             ssm_init='v0',
             forward_type=forward_type,
             use_checkpoint=use_ckpt,
-            prev_state_gate=prev_state_gate,
+            # prev_state_gate=False,  # may use much gpu mem
+            prev_state_chan=prev_state_chan,
+            skip_state_chan=skip_state_chan,
+            post_norm=post_norm,
+            mlp_type='gmlp',
             **mamba_kwargs,
         )
         # self.norm = norm_layer(inner_chan)
@@ -760,15 +777,25 @@ class UniSequential(nn.Module):
         for mod in self.mods:
             outp, local_state, global_state = mod(outp, cond, c_shuffle, local_state, global_state) # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
+            
         return outp, (local_state, global_state)
 
-    def dec_forward(self, feat, cond, c_shuffle=True, states=[None, None]):
+    def LEMM_dec_forward(self, 
+                         feat, 
+                         cond, 
+                         c_shuffle=True, 
+                         prev_states=[None, None],
+                         skip_states=[None, None]):
+        # skip_local_state, skip_global_state = skip_states[0], skip_states[1]
+        # prev_local_state, prev_global_state = prev_states[0], prev_states[1]
+        
+        feat = self.mods[0](feat)
         outp = feat
-        local_state, global_state = states[0], states[1]
-        outp = self.mods[0](outp)
-        for mod in self.mods[1:]:
-            outp, local_state, global_state = mod(outp, cond, c_shuffle, local_state, global_state)  # in_block states share
+        for i, mod in enumerate(self.mods[1:]):
+            # print(f'==decoder mods {i}')
+            outp, local_state, global_state = mod(outp, cond, c_shuffle, *(prev_states + skip_states))  # in_block states share
             # print(f'local_state: {local_state.shape}, global_state: {global_state.shape}')
+            
         return outp, (local_state, global_state)
     
 
@@ -1023,13 +1050,16 @@ class ConditionalNAFNet(BaseModel):
         )
 
         ## main body
-        self.naf_encoders = nn.ModuleList()
-        self.naf_decoders = nn.ModuleList()
+        if len(naf_enc_blk_nums) != 0 or len(naf_dec_blk_nums) != 0:
+            assert len(naf_enc_blk_nums) == len(naf_dec_blk_nums), 'NAF encoder and decoder should have the same number of blocks'
+            self.naf_encoders = nn.ModuleList()
+            self.naf_decoders = nn.ModuleList()
+            self.naf_ups = nn.ModuleList()
+            self.naf_downs = nn.ModuleList()
+            
         self.lemm_encoders = nn.ModuleList()
         self.lemm_decoders = nn.ModuleList()
         self.middle_blks = nn.ModuleList()
-        self.naf_ups = nn.ModuleList()
-        self.naf_downs = nn.ModuleList()
         self.lemm_ups = nn.ModuleList()
         self.lemm_downs = nn.ModuleList()
         
@@ -1054,8 +1084,8 @@ class ConditionalNAFNet(BaseModel):
                             d_states=ssm_enc_d_states[enc_i],
                             ssm_ratio=ssm_ratios[enc_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state if i != 0 else False,
-                            window_size=win_s,
+                            prev_state_chan=prev_state_chan_fn(i, mod='enc'),
+                            local_shift_size=0,
                         )
                         for i in range(num)
                     ]
@@ -1083,7 +1113,7 @@ class ConditionalNAFNet(BaseModel):
                     prev_state_gate=use_prev_ssm_state if i != 0 else False,
                     win_s = window_sizes[-1],
                 )
-                for i in range(num)
+                for i in range(middle_blk_nums)
             ]
         )
         n_prev_blks += middle_blk_num
@@ -1108,8 +1138,9 @@ class ConditionalNAFNet(BaseModel):
                             d_states=ssm_dec_d_states[dec_i],
                             ssm_ratio=ssm_ratios[::-1][dec_i],
                             drop_path=inter_dpr[n_prev_blks + i],
-                            prev_state_gate=use_prev_ssm_state,
-                            window_size=win_s,
+                            prev_state_chan=prev_state_chan_fn(i, mod='dec'),
+                            skip_state_chan=chan if i == 0 else None,  # assert skip_state_chan == chan
+                            local_shift_size=0,
                         )
                         for i in range(num)
                     ],
@@ -1138,7 +1169,7 @@ class ConditionalNAFNet(BaseModel):
 
         # init
         # print("============= init network =================")
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
 
     def _init_weights(self, m: nn.Module):
         # print(type(m))
@@ -1263,12 +1294,23 @@ if __name__ == "__main__":
         img_channel=8,
         condition_channel=1,
         out_channel=8,
-        width=8,
-        middle_blk_num=1,
-        enc_blk_nums=[1, 1, 1],
-        dec_blk_nums=[1, 1, 1],
-        ssm_convs=[3, 3, 3],
-        window_sizes=[8, 8, 8],
+        width=32,
+        middle_blk_nums=1,
+        
+        naf_enc_blk_nums=[],
+        naf_dec_blk_nums=[],
+        naf_chan_upscale=[],
+        
+        ssm_enc_blk_nums=[1,1,1],
+        ssm_dec_blk_nums=[1,1,1],
+        ssm_chan_upscale=[2,2,2],
+        ssm_ratios=[2,2,2],
+        window_sizes=[8,8,8],
+        ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
+        ssm_dec_d_states=[[None, 32], [16, 32], [16, 32]],
+        ssm_enc_convs=[[7, 11], [7, 11], [None, 11]],
+        ssm_dec_convs=[[None, 11], [7, 11], [7, 11]],
+        
         pt_img_size=64,
         if_rope=False,
         if_abs_pos=False,

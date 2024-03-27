@@ -138,6 +138,15 @@ def ref_for_loop(model,
                 sr = model.val_step(ms, lms, pan, False)
             else:
                 sr = model.val_step(ms, lms, pan)
+                
+        # cache = get_local().cache
+        # attns = cache['MSReversibleRefine.forward']
+        # # attns = cache['FirstAttn.forward']
+        
+        # torch.save(attns, f'/volsparse1/czh/exps/fcformer-bk/visualized_img/attns/attns_{i}.pth')
+        # print('saved pth file...')
+        # get_local.clear()
+                
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)

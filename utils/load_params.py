@@ -41,6 +41,7 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
                     else:
                         warn(f'skip the shape mismatched param, param name {name}, \
                             current shape {param.data.shape} but loaded shape {s_param.data.shape}')
+                        continue
                 param.data.copy_(s_param.data)
     try:
         _load_fn(model, params_load, strict)

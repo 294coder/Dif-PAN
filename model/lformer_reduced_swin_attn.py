@@ -411,7 +411,7 @@ class AttnFuseMain(BaseModel):
         patch_size_list=None,
         scale=4,
         attn_type='R',
-        r_op=None,
+        r_op=nn.Identity(),
     ) -> None:
         super().__init__()
         self.n_stage = n_stage
@@ -518,20 +518,22 @@ if __name__ == "__main__":
         scale=4,
         crop_batch_size=32,
         attn_type='R',
-        r_op=nn.AdaptiveAvgPool2d((16, 16))
+        r_op=nn.Identity(), #nn.AdaptiveAvgPool2d((16, 16))
     ).cuda()
     net.forward = partial(_only_for_flops_count_forward, net)
 
-    # sr = net.val_step(ms, lms, pan)
-    # sr = net._forward_implem(lms, pan)
-    # loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
-    # print(sr.shape)
+    sr = net.val_step(ms, lms, pan)
+    sr = net._forward_implem(lms, pan)
+    loss = F.mse_loss(sr, torch.randn(1, 8, 64, 64).cuda()).backward()
+    print(sr.shape)
     
     # for n, m in net.named_parameters():
     #     if m.grad is None:
     #         print(f'{n} has no grad')
+    
+    print(torch.cuda.memory_summary(device=0))
 
-    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
     # print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
