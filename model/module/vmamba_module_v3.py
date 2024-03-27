@@ -14,7 +14,7 @@ from einops import rearrange, repeat
 from timm.models.layers import DropPath, trunc_normal_
 from fvcore.nn import FlopCountAnalysis, flop_count_str, flop_count, parameter_count
 
-from .layer_norm import NAFLayerNorm as LayerNorm2d
+from .layer_norm import LayerNorm as LayerNorm2d
 DropPath.__repr__ = lambda self: f"timm.DropPath({self.drop_prob})"
 
 # triton cross scan, 2x speed than pytorch implementation =========================
@@ -1041,9 +1041,9 @@ class SS2D(nn.Module):
                 z = self.act(z)
         x = x.permute(0, 3, 1, 2).contiguous()
         if with_dconv:
-            x = self.conv2d(x) # (b, d, h, w)
             # add norm. may stablize the training?
             x = self.norm(x)
+            x = self.conv2d(x) # (b, d, h, w)
         x = self.act(x)
         
         y, ssm_state = self.forward_core(x, prev_state=prev_states, skip_state=skip_states)
@@ -1293,7 +1293,7 @@ class VSSBlock(nn.Module):
         # =============================
         mlp_ratio=4.0,
         mlp_act_layer=nn.GELU,
-        mlp_type="gmlp",
+        mlp_type="mlp",
         mlp_drop_rate: float = 0.0,
         # =============================
         use_checkpoint: bool = False,

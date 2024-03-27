@@ -28,7 +28,7 @@ sys.path.append("../")
 
 # from mamba_ssm import Mamba
 from model.module.vmamba_module_v3 import VSSBlock
-from model.module.layer_norm import NAFLayerNorm as LayerNorm2d
+from model.module.layer_norm import LayerNorm as LayerNorm2d
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 
@@ -591,7 +591,7 @@ class MambaInjectionBlock(nn.Module):
                 ssm_conv=ssm_local_conv,
                 ssm_dt_rank=dt_rank,
                 ssm_ratio=1,
-                ssm_init='v2',
+                ssm_init='v0',
                 forward_type=forward_type,
                 use_checkpoint=use_ckpt,
                 prev_state_chan=None,
@@ -1308,7 +1308,7 @@ class ConditionalNAFNet(BaseModel):
         if patch_merge:
             _patch_merge_model = PatchMergeModule(
                 self,
-                crop_batch_size=64,
+                crop_batch_size=12,
                 patch_size_list=[16, 16 * self.upscale, 16 * self.upscale],
                 scale=self.upscale,
                 patch_merge_step=self.patch_merge_step,

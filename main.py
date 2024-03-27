@@ -85,6 +85,7 @@ def get_args():
     parser.add_argument("--run_id", type=str, default=generate_id())
     parser.add_argument("--watch_log_freq", type=int, default=10)
     parser.add_argument("--watch_type", type=str, default="None")
+    parser.add_argument("--metric_name_for_save", type=str, default="SAM")
     parser.add_argument("--log_metrics", action="store_true", default=False)
 
     # ddp setting

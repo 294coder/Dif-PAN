@@ -450,13 +450,16 @@ class AttnFuseMain(BaseModel):
     ) -> None:
         super().__init__()
         self.n_stage = n_stage
+        
+        if r_op[:10] == 'patchembed':
+            _CHAN_SCALE = 2
+            self.patch_embed_lms = nn.Conv2d(lms_dim, attn_dim * _CHAN_SCALE, 4, 4, 0)
+            self.patch_embed_pan = nn.Conv2d(pan_dim, attn_dim * _CHAN_SCALE, 4, 4, 0)
+            # patch embedding scale the attn_dim
+            attn_dim = attn_dim * _CHAN_SCALE
 
         self.attn = FirstAttn(attn_dim, attn_dim, attn_dim, first_layer=False, attn_type=attn_type)
         self.pre_hp = PreHp(pan_dim, lms_dim, hp_dim)
-        
-        if r_op[:10] == 'patchembed':
-            self.patch_embed_lms = nn.Conv2d(lms_dim, attn_dim, 4, 4, 0)
-            self.patch_embed_pan = nn.Conv2d(pan_dim, attn_dim, 4, 4, 0)
 
         self.refined_blocks = nn.ModuleList([])
         self.hp_branch = nn.ModuleList([])
@@ -544,7 +547,7 @@ if __name__ == "__main__":
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
     
-    device = 'cuda:0'
+    device = 'cuda:1'
     torch.cuda.set_device(device)
 
     def _only_for_flops_count_forward(self, *args, **kwargs):
@@ -578,10 +581,10 @@ if __name__ == "__main__":
     #     if m.grad is None:
     #         print(f'{n} has no grad')
     
-    # print(torch.cuda.memory_summary(device))
+    print(torch.cuda.memory_summary(device))
 
-    print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
-    print(net(lms, pan).shape)
+    # print(flop_count_table(FlopCountAnalysis(net, (lms, pan))))
+    # print(net(lms, pan).shape)
 
     ## dataset: num_channel HSI/PAN
     # Pavia: 102/1

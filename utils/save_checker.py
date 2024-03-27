@@ -10,16 +10,33 @@ class BestMetricSaveChecker:
     metric_name: str
     check_order: str
     
-    def __init__(self, metric_name: str, check_order: str='up'):
+    def __init__(self, metric_name: str, check_order: str=None):
         self.metric_name = metric_name
         assert check_order in ['up', 'down']
-        self.check_order = check_order
+        if check_order is None: check_order = self._default_setting()
+        else: self.check_order = check_order
         if check_order == 'up': default_best_metric_val = -np.Inf
         else: default_best_metric_val = np.Inf
 
         self._best_metric = default_best_metric_val
         self._check_fn = (lambda new, old: new > old) if check_order=='up' else \
                          (lambda new, old: new <= old)
+                         
+    def _default_setting(self):
+        metric_name = self.metric_name.lower()
+        _default_dict = {
+            'psnr': 'up',
+            'ssim': 'up',
+            'sam': 'down',
+            'ergas': 'down',
+            'cc': 'up',
+            'scc': 'up',
+        }
+        if check_order := _default_dict.get(metric_name):
+            if check_order is None:
+                raise ValueError(f'No default setting for metric {metric_name}, you should provide @check_order manually')
+            else:
+                return check_order
         
     def __call__(self, val_metrics: dict[str, float], *args):
         assert self.metric_name in val_metrics.keys(), f'@metric_name {self.metric_name} should in @val_metrics, but got {val_metrics}'
