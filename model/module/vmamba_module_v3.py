@@ -13,6 +13,8 @@ import torch.utils.checkpoint as checkpoint
 from einops import rearrange, repeat
 from timm.models.layers import DropPath, trunc_normal_
 from fvcore.nn import FlopCountAnalysis, flop_count_str, flop_count, parameter_count
+
+from .layer_norm import NAFLayerNorm as LayerNorm2d
 DropPath.__repr__ = lambda self: f"timm.DropPath({self.drop_prob})"
 
 # triton cross scan, 2x speed than pytorch implementation =========================
@@ -663,18 +665,6 @@ class PatchMerging2D(nn.Module):
         x = self.reduction(x)
 
         return x
-
-
-class LayerNorm2d(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
-
-    def forward(self, x):
-        eps = 1e-5 if x.dtype == torch.float32 else 1e-3
-        var = torch.var(x, dim=1, unbiased=False, keepdim=True)
-        mean = torch.mean(x, dim=1, keepdim=True)
-        return (x - mean) * (var + eps).rsqrt() * self.g
 
 
 class SS2D(nn.Module):

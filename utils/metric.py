@@ -116,7 +116,7 @@ class AnalysisPanAcc(object):
         return acc_ds
     
     def D_lambda_D_s_HQNR_batch(self, sr=None, ms=None, lms=None, pan=None):
-        assert sr is not None and lms is not None and pan is not None
+        assert sr is not None and lms is not None and pan is not None and ms is not None
         if ms is None:
             ms = torch.nn.functional.interpolate(lms, scale_factor=1/self.rato, mode='bilinear', align_corners=False)
                     
@@ -144,6 +144,13 @@ class AnalysisPanAcc(object):
         return acc_d1
     
     def _call_check_args_to_kwargs(self, *args):
+        def may_np_to_tensor(d):
+            for k, v in d.items():
+                if not isinstance(v, torch.Tensor):
+                    d[k] = torch.tensor(v)
+                    
+            return d
+        
         if len(args) == 2:
             assert self.ref, 'ref mode should have 2 args'
             kwargs = dict(b_gt=args[0], b_pred=args[1])
@@ -156,7 +163,7 @@ class AnalysisPanAcc(object):
         else:
             raise ValueError('args should have 2 or 4 elements')
         
-        return kwargs
+        return may_np_to_tensor(kwargs)
 
     def __call__(self, *args):
         """
@@ -178,6 +185,14 @@ class AnalysisPanAcc(object):
         self.acc_ave = self._average_acc(self.acc_ave, self._call_n + n)
         self._call_n += n
         return self.acc_ave
+    
+    def clear_history(self, verbose=False):
+        if verbose:
+            print('>> AccAnalysis: clear history')
+        self._acc_d = {}
+        self._call_n = 0
+        self.acc_ave = {'SAM': 0., 'ERGAS': 0., 'PSNR': 0., 'CC': 0., 'SSIM': 0.} if self.ref else \
+                       {'D_S': 1., 'D_lambda': 1., 'HQNR': 0.}
 
     def print_str(self, decimals=6):
         return dict_to_str(self.acc_ave, decimals=decimals)

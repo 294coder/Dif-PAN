@@ -51,7 +51,7 @@ python main.py --proj_name panMamba --arch panMamba \
 --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
 --loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset using local shift and gmlp' \
 --logger_on --log_metrics \
---pretrain --pretrain_id '5v9xqed9' --non_load_strict
+--pretrain --pretrain_id 'mdk4b7e0' --non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

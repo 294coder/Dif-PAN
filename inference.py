@@ -25,7 +25,7 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:1"
+device = "cuda:0"
 torch.cuda.set_device(device)
 dataset_type = "cave_x8"
 save_format = "mat"
@@ -136,7 +136,7 @@ print("=" * 50)
 
 # p = './weight/dcformer_2hwz3dgf.pth'
 
-p = './weight/MIMO_SST_k03s5d7f.pth'
+p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
 
 ##### harvard_x8
 # p = "./weight/dcformer_zeavxkwx.pth"  # dcformer_mwsa ghost module
@@ -144,6 +144,8 @@ p = './weight/MIMO_SST_k03s5d7f.pth'
 
 # p = './weight/dcformer_3rwfkdra.pth'  # dcformer new arch wx c_attn legacy low psnr
 # p = './weight/dcformer_dkwinunx.pth'  # dcformer 8 CAttn
+
+# p = './weight/MIMO_SST_pfjp3ssl.pth'  # MIMO_SST net
 
 #### harvard_x4
 # p = './weight/fuseformer_ufsb66w3.pth'  # harvard fuseformer
@@ -259,7 +261,7 @@ elif dataset_type == "harvard":
     # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
     path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
 elif dataset_type == "harvard_x8":
-    path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+    path = "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
 elif dataset_type == "gf5":
     if not full_res:
         path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"

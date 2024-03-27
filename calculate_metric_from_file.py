@@ -37,10 +37,15 @@ def norm_to_0_1(*args, norm_const=2047):
 #%%
 
 
-path = '/home/czh/exps/fcformer-bk/visualized_img/data_panMamba_wv3_unref_p64.mat'
-full_res = True if 'unref' else False
-dataset_type = 'wv3'
-ratio = 4
+path = '/volsparse1/czh/exps/fcformer-bk/visualized_img/data_MIMO_SST_harvard_x8_ref.mat'
+full_res = True if 'unref' in path else False
+dataset_type = 'harvard_x8'
+ratio = 4 if dataset_type not in ['cave', 'harvard'] else int(dataset_type.split('_')[-1][-1])
+print('===================DATASET========================')
+print(f'Dataset: {dataset_type}')
+print(f'Full Resolution: {full_res}')
+print(f'Ratio: {ratio}')
+print('=================================================')
 const = {'wv3': 2047, 'gf': 1023, 'qb': 1023, 'wv2': 2047,
          'cave': 1, 'harvard': 1, 'gf5': 1}.get(dataset_type.split('_')[0], 1)
 dataset_path = find_data_path(dataset_type, full_res)
@@ -59,13 +64,19 @@ if path.is_dir():
     file_lst = list(path.glob('*.mat'))
     metrics = []
     for i, path in tqdm(enumerate(file_lst)):
-        ms, lms, pan = dataset["ms"][i:i+1], dataset["lms"][i:i+1], dataset["pan"][i:i+1]
+        if hasattr(dataset, 'ms'):
+            ms, lms, pan = dataset["ms"][i:i+1], dataset["lms"][i:i+1], dataset["pan"][i:i+1]
+        else:
+            ms, lms, pan = dataset["LRHSI"][i:i+1], dataset["HSI_up"][i:i+1], dataset["RGB"][i:i+1]
         sr = loadmat(path)['sr']
         ms, lms, pan, sr = norm_to_0_1(ms, lms, pan, sr, norm_const=const)
         if full_res: 
             analysis(sr, ms, lms, pan)
         else:
-            gt = dataset["gt"][i:i+1]
+            if hasattr(dataset, 'gt'):
+                gt = dataset["gt"][i:i+1]
+            else:
+                gt = dataset['GT'][i:i+1]
             gt = norm_to_0_1(gt, norm_const=const)
             analysis(sr, gt)
         metrics.append(analysis.acc_ave)
@@ -77,13 +88,19 @@ else:
     files = loadmat(path)['sr']
     metrics = []
     for i in trange(len(files)):
-        ms, lms, pan = dataset["ms"][i:i+1], dataset["lms"][i:i+1], dataset["pan"][i:i+1]
+        if hasattr(dataset, 'ms'):
+            ms, lms, pan = dataset["ms"][i:i+1], dataset["lms"][i:i+1], dataset["pan"][i:i+1]
+        else:
+            ms, lms, pan = dataset["LRHSI"][i:i+1], dataset["HSI_up"][i:i+1], dataset["RGB"][i:i+1]
         sr = files[i:i+1]
         ms, lms, pan, sr = norm_to_0_1(ms, lms, pan, sr, norm_const=const)
         if full_res: 
             analysis(sr, ms, lms, pan)
         else:
-            gt = dataset["gt"][i:i+1]
+            if hasattr(dataset, 'gt'):
+                gt = dataset["gt"][i:i+1]
+            else:
+                gt = dataset['GT'][i:i+1]
             gt = norm_to_0_1(gt, norm_const=const)
             analysis(sr, gt)
         metrics.append(analysis.acc_ave)
