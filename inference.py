@@ -27,7 +27,7 @@ from utils.visualize import invert_normalized
 
 device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "cave_x8"
 save_format = "mat"
 full_res = False
 split_patch = False
@@ -39,7 +39,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = False
+save_mat = True
 loop_func = (
     partial(
         ref_for_loop,
@@ -55,11 +55,10 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "lformer"
+name = "MIMO_SST"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
-
 
 print("=" * 50)
 print("dataset:", dataset_type)
@@ -107,7 +106,7 @@ print("=" * 50)
 # p = "./weight/lformer_16nzc16d.pth"  # lformer ablation (skip attention)
 # p = "./weight/lformer_dcu45ddw.pth"  # lformer
 
-p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
+# p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
 # ========================================================
 
@@ -135,6 +134,8 @@ p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 # p = './weight/dcformer_1gx5sc1l.pth'  # dcformer 8 CAttn
 
 # p = './weight/dcformer_2hwz3dgf.pth'
+
+p = './weight/MIMO_SST_k03s5d7f.pth'
 
 ##### harvard_x8
 # p = "./weight/dcformer_zeavxkwx.pth"  # dcformer_mwsa ghost module
@@ -252,7 +253,7 @@ if dataset_type == "wv3":
 elif dataset_type == "cave":
     path = "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 elif dataset_type == "cave_x8":
-    path = "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+    path = "/volsparse1/dataset/HISR/cave_x8/test_cave(with_up)x8_rgb.h5"
 elif dataset_type == "harvard":
     # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
     path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
@@ -303,7 +304,7 @@ else:
 # for k, v in params['model'].items():
 #    odict['module.' + k] = v
 
- 
+
 # model.load_state_dict(params["model"])
 model = module_load(p, model, device, strict=True)
 model = model.to(device)

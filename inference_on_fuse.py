@@ -1,50 +1,38 @@
+import h5py
 import numpy as np
 import torch as th
-import torch
-import os
 
-from model.build_network import build_network
-from datasets.TNO import TNODataset
 from datasets.FLIR_2 import FLIRDataset
-from datasets.TNO import WindowBasedPadder
+from datasets.TNO import TNODataset, WindowBasedPadder
 from utils import AnalysisFLIRAcc
 
-# path = "/Data2/ZiHanCao/datasets/TNO"
-# ds = TNODataset(path, "test", no_split=True)
-path = '/Data2/ZiHanCao/datasets/RoadSceneFusion_1'
-ds = FLIRDataset(path, 'test', no_split=True)
+# path = "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/RoadSceneFusion_1"
+path = '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/TNO'
+# ds = FLIRDataset(path, "test", no_split=True)
+ds = TNODataset(path, "test", no_split=True)
 dl = th.utils.data.DataLoader(ds, batch_size=1, shuffle=False)
 
-os.makedirs('/Data2/ZiHanCao/exps/panformer/visualized_img/ir_RS', exist_ok=True)
-print('make dir:', '/Data2/ZiHanCao/exps/panformer/visualized_img/ir_RS')
+import torch
 
+from model.build_network import build_network
 
-device = torch.device("cuda:1")
+device = torch.device("cuda:0")
 torch.cuda.set_device(device)
 
+# net = build_network(
+#     "dcformer_mwsa",
+#     spectral_num=1,
+#     added_c=1,
+#     block_list=[1, [1, 1], [1, 1, 1]],
+#     mode="C",
+#     residual=False,
+# )
 net = build_network(
-    "dcformer_mwsa_new",
-    spatial_size=64,
+    'dcformer_mwsa',
     spectral_num=1,
-    added_c=1,
+    block_list=[1, [1, 1], [1, 1, 1]],
     mode="C",
-    channel_list=[8, [8, 16], [8, 16, 24]],  # [48, [48, 96], [48, 96, 192]]  # [24, [24, 48], [24, 48, 96]]
-    num_heads=[4, [4, 4], [8, 8, 8]],
-    mlp_ratio=[1, [1, 1], [1, 1, 1]],  # c[2, [2, 2], [2, 2, 2]]
-    block_list=[2, [2, 2], [2, 2, 2]],
-    norm_type="ln",
-    patch_merge_step=True,
-    patch_size_list=[16, 32, 64, 64],  # [32, 128, 256, 256] #[64, 64, 32, 8]
-    scale=4,
-    attn_drop=0.2,
-    drop_path=0.2,
-    crop_batch_size=1,
-    residual=True,
-    # spectral_num=1,
-    # added_c=1,
-    # block_list=[1, [1, 1], [1, 1, 1]],
-    # mode="C",
-    # residual=False,
+    added_c=1
 )
 net.load_state_dict(
     # th.load('/home/ZiHanCao/exps/panformer/weight/dcformer_379zkf3e/ep_550.pth', map_location=device)['model']  # 2n8eo45b
@@ -59,11 +47,16 @@ net.load_state_dict(
     # th.load("./weight/dcformer_13g4q0ls/ep_440.pth", map_location=device)["model"]
     # th.load("./weight/dcformer_34jj20so/ep_60.pth", map_location=device)["model"]
     # th.load("./weight/dcformer_1beukp0d.pth", map_location=device)["model"]
-    # th.load("./weight/dcformer_391xl8vy.pth", map_location=device)["model"]
-    th.load("./weight/dcformer_13xe8kzx.pth", map_location=device)["model"]  # dcformer wx new arch (residual vis ir mean)
-
+    # th.load("./weight/dcformer_3umay70j/ep_260.pth", map_location=device)["model"]  # cddloss
+    # th.load("./weight/dcformer_709y225a/ep_120.pth", map_location=device)["model"]
+    
+    # th.load('./weight/dcformer_k81srmy1/ep_120.pth', map_location=device)['model']  # u2fusion loss, good, TNO
+    # th.load('./weight/dcformer_23tbaql6/ep_230.pth', map_location=device)['model']  # u2fusion loss, RoadScene (and TNO), test only RS
+    
+    
+    
     # ydtr
-    # th.load('./weight/ydtr_3gdmei16.pth', map_location=device)['model']
+    # th.load('./weight/ydtr.pth', map_location=device)# ['model']
 )
 base_ws = 16
 net = net.cuda()
@@ -71,7 +64,12 @@ net = net.cuda()
 import cv2
 import matplotlib.pyplot as plt
 import torch
+import torch.nn.functional as F
+from scipy.io import savemat
+from torchvision.utils import make_grid
 from tqdm import tqdm
+
+from model.base_model import PatchMergeModule
 
 
 def convert_uint8(img):
@@ -84,51 +82,45 @@ def convert_uint8(img):
 
 
 net.eval()
-# patch_merge_net = PatchMergeModule(
-#     crop_batch_size=1,
-#     patch_size_list=[16, 32, 64, 64],
-#     net=net,
-# )
+# patch_merge_net = PatchMergeModule(net, 1, patch_size=128, scale=1, device=device)
 padder = WindowBasedPadder(64)
 ms_padder = WindowBasedPadder(64)
 acc_analysiser = AnalysisFLIRAcc()
 with th.no_grad():
-    for i, (ir, ms, vis, gt) in tqdm(enumerate(dl), total=len(dl)):
+    for i, (ir, ms, vis, gt) in tqdm(enumerate(dl), total=dl.dataset.__len__()):
         ir, ms, vis, gt = ir.cuda(), ms.cuda(), vis.cuda(), gt.cuda()
 
         ir = padder(ir)
         vis = padder(vis, no_check_pad=True)
-        gt = padder(gt, no_check_pad=True)
-
+        
         shape = ir.shape[-2:]
         ms_shape = (torch.tensor(shape) // 4).tolist()
         ms = ms_padder(ms, size=ms_shape)
-
+        
         # spa_size = gt.shape[-2:]
-        # pan_nc = ir_RS.size(1)
+        # pan_nc = ir.size(1)
         # ms_nc = ms.size(1)
-        # inp = (
+        # input = (
         #     F.interpolate(
         #         ms, size=tuple(vis.shape[-2:]), mode="bilinear", align_corners=True
         #     ),
         #     vis,
-        #     torch.cat([ir_RS, torch.zeros(1, ms_nc - pan_nc, *spa_size).cuda()], dim=1),
+        #     torch.cat([ir, torch.zeros(1, ms_nc - pan_nc, *spa_size).cuda()], dim=1),
         # )
-        # sr = patch_merge_net.forward_chop(*inp)[0]
-
-        # max_k = ir_RS.shape[-1]
-
-        # window_dict = {}
-        # for j in range(3):
-        #     window_dict[max_k // (2**j)] = base_ws // (2**j)
-
-        # net._set_window_dict(window_dict)
+        # sr = patch_merge_net.forward_chop(*input)[0]
+        
+        max_k = ir.shape[-1]
+        
+        window_dict = {}
+        for j in range(3):
+            window_dict[max_k // (2**j)] = base_ws // (2**j)
+        
+        net._set_window_dict(window_dict)
         sr = net.val_step(ms, vis, ir)
         sr = padder.inverse(sr)
-        gt = padder.inverse(gt)
-
+        
         acc_analysiser(gt, sr)
-
+        
         sr = sr.detach().cpu().numpy()[0]
         sr_show = sr.transpose([1, 2, 0])
         vis_show = vis.detach().cpu().numpy()[0].transpose([1, 2, 0])
@@ -138,7 +130,7 @@ with th.no_grad():
         axes = axes.flatten()
 
         for img, name, ax in zip(
-                [vis_show, ir_show, sr_show], ["vis", "ir_RS", "fuse"], axes
+                [vis_show, ir_show, sr_show], ["vis", "ir", "fuse"], axes
         ):
             ax.imshow(img, "gray")
             ax.set_axis_off()
@@ -146,10 +138,10 @@ with th.no_grad():
 
         plt.subplots_adjust(wspace=0, hspace=0)
         plt.tight_layout(pad=0)
-        plt.show()
+        # plt.show()
 
         sr_show = convert_uint8(sr_show)
-        cv2.imwrite(f"./visualized_img/ir_RS/{i}.bmp", sr_show)
-        print("img saved to {}".format(f"./visualized_img/ir_RS/{i}.bmp"))
-
+        cv2.imwrite(f"./visualized_img/ir/{i}.bmp", sr_show)
+        print("img saved to {}".format(f"./visualized_img/ir/{i}.bmp"))
+        
     print(acc_analysiser.print_str())

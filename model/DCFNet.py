@@ -2,17 +2,17 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-import os
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import optim
 
-from model.base_model import BaseModel, register_model
+from model.base_model import BaseModel, register_model, PatchMergeModule
 
 BN_MOMENTUM = 0.01
-PLANES = 31
+PLANES = 8
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -384,7 +384,11 @@ class TransitionFPN(nn.Module):
 
 @register_model('dcfnet')
 class DCFNet(BaseModel):
-    def __init__(self, spectral_num, mode="SUM"):
+    def __init__(self, spectral_num, mode="SUM",
+                 patch_merge=True,
+                 patch_size_list=[64, 64, 16],
+                 crop_batch_size=20,
+                 scale=8, ):
         super(DCFNet, self).__init__()
         self.first_fuse = mode
         if mode == "SUM":
@@ -392,12 +396,27 @@ class DCFNet(BaseModel):
             init_channel = spectral_num
         elif mode == "C":
             print("concat head")
-            init_channel = spectral_num + 3
+            init_channel = spectral_num + 1
         else:
             assert False, print("fisrt_fuse error")
         self.blocks_list = [4, [4, 4], [4, 4, 4]]
         self.channels_list = [64, [32, 64], [32, 64, 128]]
         NUM_MODULES = 1  # HighResolutionModule cell repeat
+
+        # use patchmerge model
+        self.patch_merge = patch_merge
+        self.scale = scale
+        self.patch_list = patch_size_list
+        assert scale in [4, 8], "model only support scale equals 4 and 8"
+        if patch_merge:
+            self._patch_merge_model = PatchMergeModule(
+                # net=self,
+                patch_merge_step=self.patch_merge_step,
+                crop_batch_size=crop_batch_size,
+                patch_size_list=patch_size_list,
+                scale=scale,
+            )
+
         ################################################################################################
         # stem net
         self.conv1 = nn.Conv2d(init_channel, 64, kernel_size=3, stride=1, padding=1,
@@ -596,6 +615,18 @@ class DCFNet(BaseModel):
         # 获得同一个输入，不支持不同输入
         return nn.ModuleList(transition_layers)
 
+    def init_weights(self, pretrained='', ):
+        print('=> init weights from normal distribution')
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight)
+                # nn.init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1.0)
+                nn.init.constant_(m.bias, 0.0)
+
     def _forward_implem(self, x, ly, my, sy):
         '''
         TODO: ly三层卷后级联x再做transition_layer
@@ -645,18 +676,6 @@ class DCFNet(BaseModel):
 
         return x
 
-    def init_weights(self, pretrained='', ):
-        print('=> init weights from normal distribution')
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight)
-                # nn.init.normal_(m.weight, std=0.001)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0.0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1.0)
-                nn.init.constant_(m.bias, 0.0)
-
     def train_step(self, ms, lms, pan, gt, criterion):
         mms = torch.nn.functional.interpolate(ms, size=(ms.size(2) * 2, ms.size(3) * 2),
                                               mode="bilinear", align_corners=True)
@@ -669,23 +688,46 @@ class DCFNet(BaseModel):
     def val_step(self, ms, lms, pan):
         mms = torch.nn.functional.interpolate(ms, size=(ms.size(2) * 2, ms.size(3) * 2),
                                               mode="bilinear", align_corners=True)
-        sr = self._forward_implem(pan, lms, mms, ms)
+
+        if not self.patch_merge:
+            sr = self._forward_implem(pan, lms, mms, ms)
+        else:
+            sr = self._patch_merge_model.forward_chop(ms, mms, lms, pan)[0]
         sr += lms
+
         return sr
+
+    def patch_merge_step(self, ms, mms, lms, pan, **kwargs):
+        return self._forward_implem(pan, lms, mms, ms)
 
 
 if __name__ == '__main__':
-    from fvcore.nn import FlopCountAnalysis, flop_count_table
-
-    ms = torch.randn(1, 31, 16, 16)
-    mms = torch.randn(1, 31, 32, 32)
-    lms = torch.randn(1, 31, 64, 64)
-    pan = torch.randn(1, 3, 64, 64)
+    device='cuda:0'
+    ms = torch.randn(1, 8, 64, 64).to(device)
+    mms = torch.randn(1, 8, 128, 128).to(device)
+    lms = torch.randn(1, 8, 256, 256).to(device)
+    pan = torch.randn(1, 1, 256, 256).to(device)
+    
+    import contextlib
+    import time
+    
+    @contextlib.contextmanager
+    def time_it(t=10):
+        t1 = time.time()
+        yield
+        t2 = time.time()
+        print('time: {:.3f}s'.format((t2 - t1)/t))
+        
 
     # params: 2.915M
     # FLOPs: 3.489G
-    net = DCFNet(31, mode='C')
-    # print(net.val_step(ms, lms, pan).shape)
+    net = DCFNet(8, mode='C', patch_merge=True, patch_size_list=[16, 32, 64, 64], scale=4).to(device)
+    print(net.val_step(ms, lms, pan).shape)
+    
+    tt = 10
+    with time_it(tt):
+        for _ in range(tt):
+            y = net.val_step(ms, lms, pan)
 
-    net.forward = net._forward_implem
-    print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
+    # net.forward = net._forward_implem
+    # print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))

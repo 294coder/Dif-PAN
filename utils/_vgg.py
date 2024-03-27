@@ -134,7 +134,7 @@ def vgg16(pretrained=False, model_root=None, **kwargs):
     if pretrained:
         # state_dict = model_zoo.load_url(model_urls['vgg16'], model_root)
         print('loading pretrained model')
-        state_dict = torch.load('/Data2/ZiHanCao/exps/panformer/weight/vgg16-397923af.pth')
+        state_dict = torch.load('./weight/vgg16-397923af.pth')
         model.load_state_dict(state_dict)
     return model
 

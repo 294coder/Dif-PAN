@@ -29,12 +29,20 @@ def has_patch_merge_model(model: nn.Module):
 def patch_merge_in_val_step(model):
     return 'patch_merge' in list(inspect.signature(model.val_step).parameters.keys())
 
+def has_patch_merge_model(model: nn.Module):
+    return (hasattr(model, '_patch_merge_model')) or (hasattr(model, 'patch_merge_model'))
+
+
+def patch_merge_in_val_step(model):
+    return 'patch_merge' in list(inspect.signature(model.val_step).parameters.keys())
+
 
 @torch.no_grad()
 @torch.inference_mode()
 def unref_for_loop(model,
                    dl: DataLoader,
                    device,
+                   *,
                    split_patch=False,
                    **patch_merge_module_kwargs):
     all_sr = []
@@ -100,6 +108,7 @@ def unref_for_loop(model,
 def ref_for_loop(model,
                  dl,
                  device,
+                 *,
                  split_patch=False,
                  ergas_ratio=4,
                  residual_exaggerate_ratio=100,
@@ -130,13 +139,13 @@ def ref_for_loop(model,
             else:
                 sr = model.val_step(ms, lms, pan)
                 
-        cache = get_local().cache
-        attns = cache['MSReversibleRefine.forward']
-        # attns = cache['FirstAttn.forward']
+        # cache = get_local().cache
+        # attns = cache['MSReversibleRefine.forward']
+        # # attns = cache['FirstAttn.forward']
         
-        torch.save(attns, f'/volsparse1/czh/exps/fcformer-bk/visualized_img/attns/attns_{i}.pth')
-        print('saved pth file...')
-        get_local.clear()
+        # torch.save(attns, f'/volsparse1/czh/exps/fcformer-bk/visualized_img/attns/attns_{i}.pth')
+        # print('saved pth file...')
+        # get_local.clear()
                 
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()

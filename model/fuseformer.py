@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
-from model.base_model import BaseModel, register_model
+from model.base_model import BaseModel, PatchMergeModule, register_model
 
 
 # -------------Initialization----------------------------------------
@@ -33,18 +33,15 @@ def init_weights(*modules):
 @register_model('fuseformer')
 class MainNet(BaseModel):
 
-    def __init__(self, num_channel=8, rgb_channel=3, num_feature=48, scale=2):
+    def __init__(self, num_channel=8, num_feature=48):
         super(MainNet, self).__init__()
         # num_channel = 31
         # num_feature = 48
         ####################
-        
-        self.scale = scale
-        
         self.T_E = Transformer_E(num_feature)
         self.T_D = Transformer_D(num_feature)
         self.Embedding = nn.Sequential(
-            nn.Linear(num_channel + rgb_channel, num_feature),
+            nn.Linear(num_channel + 3, num_feature),
         )
         self.refine = nn.Sequential(
             nn.Conv2d(num_feature, num_feature, 3, 1, 1),
@@ -54,7 +51,7 @@ class MainNet(BaseModel):
 
     def _forward_implem(self, HSI, MSI):
         ################LR-HSI###################
-        UP_LRHSI = F.interpolate(HSI, scale_factor=self.scale, mode='bicubic')  ### (b N h w)
+        UP_LRHSI = F.interpolate(HSI, scale_factor=4, mode='bicubic')  ### (b N h w)
         UP_LRHSI = UP_LRHSI.clamp_(0, 1)
         sz = UP_LRHSI.size(2)
         Data = torch.cat((UP_LRHSI, MSI), 1)
@@ -80,12 +77,12 @@ class MainNet(BaseModel):
 
     def patch_merge_step(self, ms, lms, pan, hisi=True, split_size=64):
         # all shape is 64
-        mms = F.interpolate(ms, size=(split_size // 2, split_size // 2), mode='bilinear', align_corners=True)
-        ms = F.interpolate(ms, size=(split_size // 4, split_size // 4), mode='bilinear', align_corners=True)
-        if hisi:
-            pan = pan[:, :3]
-        else:
-            pan = pan[:, :1]
+        # mms = F.interpolate(ms, size=(split_size // 2, split_size // 2), mode='bilinear', align_corners=True)
+        # ms = F.interpolate(ms, size=(split_size // 4, split_size // 4), mode='bilinear', align_corners=True)
+        # if hisi:
+        #     pan = pan[:, :3]
+        # else:
+        #     pan = pan[:, :1]
 
         sr = self._forward_implem(ms, pan)[0]
 
@@ -210,23 +207,28 @@ class Transformer_D(nn.Module):
 
 if __name__ == '__main__':
     import fvcore.nn as fvnn
-    import torch.cuda as tcd
-    
-    device = 'cuda:0'
 
-    net = MainNet(31, 3).to(device)
+    device = 'cuda:1'
+    net = MainNet(31).to(device)
     ms = torch.randn(1, 31, 128, 128).to(device)
-    pan = torch.randn(1, 4, 512, 512).to(device)
+    pan = torch.randn(1, 3, 512, 512).to(device)
+    # print(net._forward_implem(ms, pan)[0].qashape)
     
-    with torch.no_grad():
-        import time
+    import time
+    
+    with torch.inference_mode():
+        net = PatchMergeModule(net, crop_batch_size=12, patch_size_list=[16, 64, 64])
+        net.forward_chop(ms, pan, pan)
         t1 = time.time()
-        for _ in range(10):
-            sr = net(ms, pan)
+        
+        print('===> testing time...')
+        t1 = time.time()
+        for _ in range(5):
+            net.forward_chop(ms, pan, pan)
+        
+        print(f'===> test time {(time.time()-t1) / 5}')
     
-    print(net._forward_implem(ms, pan)[0].shape)
     
-    print(tcd.memory_summary())
     
     # analysis = fvnn.FlopCountAnalysis(net, (ms, pan))
     # print(fvnn.flop_count_table(analysis))

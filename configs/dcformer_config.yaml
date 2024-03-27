@@ -19,48 +19,44 @@ lr_scheduler:
   # factor: !!float 0.2
   # cooldown: 50
   name: "multi_step"
-  milestones: [80, 6000, 1200] #[100, 800]
+  milestones: [100, 1000]
   gamma: 0.1
 
 max_norm: 0.3
 
 path:
-  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
-  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
-
-  #  train_path: '/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-  #  val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  # train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  # val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv2/reduced_examples/test_wv2_multiExm1.h5"
+#   val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
+  #  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5'
   #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+#  train_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
+#  val_path: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'
 
-  # train_path: '/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
-  # val_path: '/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'
-
-  #  train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
-  #  val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+  # train_path: "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+  # val_path: "/media/office-401-remote/Elements SE/cao/cavex4/test_cavepatches64-2.h5"
 
   #  train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb.h5"
   #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
 
-  train_path: "/Data2/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb_16.h5"
-  # val_path: "/Data2/ShangqiDeng/data/HSI/cave_x8/test_cavepatches128-2.h5"
-  val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+  # train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb_16.h5"
+  # val_path: "/home/ShangqiDeng/data/HSI/cave_x8/test_cavepatches128-2.h5"
 
   # train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
   # val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_clip_128.h5"
-  # val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
-  # train_path: "/Data2/ShangqiDeng/data/HSI/harvard_x8/train_harvard(with_up)x8_rgb.h5"
-  # val_path: "/Data2/ShangqiDeng/data/HSI/harvard_x8/test_harvard(with_up)x8_rgb.h5"
-
-  # train_path: '/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
-  # val_path: '/Data2/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
+  #   train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
+  #   val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
 
   # train_path: '/home/ZiHanCao/datasets/FLIR/train_vis_ir.h5'
   # val_path: '/home/ZiHanCao/datasets/FLIR/val_vis_ir.h5'
 
-  # base_dir: '/Data2/ZiHanCao/datasets/RoadSceneFusion_1'
-#  base_dir: "/Data2/ZiHanCao/datasets/RoadScene_and_TNO/"
+  # base_dir: '/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadSceneFusion_1'
+  # base_dir: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/TNO/"
+  # base_dir: "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/"
 
 network_configs:
   dcformer_base:
@@ -90,30 +86,30 @@ network_configs:
     block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
     added_c: 3
-
+  
   dcformer_mwsa_new:
     spatial_size: 64
-    spectral_num: 8
+    spectral_num: 4
     added_c: 1
     mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] #[32, [32, 56], [32, 56, 72]] #[8, [8, 16], [8, 16, 24]]  # [32, [32, 48], [32, 48, 64]]
-    num_heads: [ 8,[ 8,8 ],[ 8,8,8 ] ] #[8, [8, 12], [8, 12, 12]] # [ 8,[ 8,8 ],[ 8,8,8 ] ] #[4, [ 4, 4], [ 8, 8, 8 ]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ] #[1, [ 1, 1 ], [ 1, 1, 1]] #[ 2, [ 2, 2 ], [ 2, 2, 2 ] ]
-    block_list:  [ 1,[ 1,1 ],[ 1,1,1 ] ] #[2, [2, 2], [2, 2, 2]] # [ 1,[ 1,1 ],[ 1,1,1 ] ] # [ 2,[ 2,2 ],[ 2,2,2 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
+    channel_list: [32, [32, 56], [32, 56, 72]] #[ 48, [ 48, 96 ], [ 48, 96, 192 ] ] #[8, [8, 16], [8, 16, 24]]  # [32, [32, 48], [32, 48, 64]]
+    num_heads: [ 8,[ 8,8 ],[ 8,8,8 ] ]#[4, [ 4, 4], [ 8, 8, 8 ]]
+    mlp_ratio: [ 2, [ 2, 2 ], [ 2, 2, 2 ] ]#[1, [ 1, 1 ], [ 1, 1, 1]]
+    block_list: [ 2,[ 2,2 ],[ 2,2,2 ] ] #[ 1,[ 1,1 ],[ 1,1,1 ] ] #[2,[2,2],[2,2,2]]   # [6, [6, 6], [6, 6, 6]]
     norm_type: "ln"
     patch_merge_step: yes
-    patch_size_list: [16,32,64,64] #[16, 64, 128, 128] #[64, 64, 32, 8]
+    patch_size_list: [ 16, 32, 64, 64 ] #[32, 128, 256, 256] #[64, 64, 32, 8]
     scale: 4
-    residual: True # vis-ir_RS
+    residual: True  # vis-ir_RS
     # for harvard x8
     attn_drop: 0.2
     drop_path: 0.2
-    crop_batch_size: 4
+    crop_batch_size: 16
 
   dcformer_reduce_c32:
     spectral_num: 31
     channel_list: [64, [32, 64], [32, 64, 128]]
-    block_list: [4, [4, 3], [4, 3, 2]]
+    block_list: [4, [6, 3], [6, 3, 2]]
     mode: "C"
     added_c: 3
 
@@ -154,141 +150,23 @@ network_configs:
     spectral_num: 31
     mode: "C"
 
-  ############## discussions ##################
+  dcformer_abla_only_cross_branch_xca:
+    spectral_num: 31
+    mode: "C"
+
   dcformer_mwsa_mog_fusion_head:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
     spectral_num: 31
-    added_c: 3
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
+    added_c: 3
 
-  dcformer_mwsa_multisource_proj:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
+  dcformer_disscuss_multisource_projection:
     spectral_num: 31
-    added_c: 3
+    block_list: [4, [4, 3], [4, 3, 2]]
     mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
-
-  ############# ablation study ################
-  dcformer_mwsa_wo_ghost_module:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
-    spectral_num: 31
     added_c: 3
-    mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
-
-  dcformer_mwsa_only_cross_branch_XCA:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
-    spectral_num: 31
-    added_c: 3
-    mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
-
-  dcformer_mwsa_only_mwsa:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
-    spectral_num: 31
-    added_c: 3
-    mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
-
-  dcformer_mwsa_in_scale_MWSA:
-    # spectral_num: 31
-    # block_list: [4, [4, 3], [4, 3, 2]]
-    # mode: "C"
-    # added_c: 3
-    spatial_size: 64
-    spectral_num: 31
-    added_c: 3
-    mode: "C"
-    channel_list: [48, [48, 96], [48, 96, 192]] # [32, [32, 48], [32, 48, 64]]
-    num_heads: [8, [8, 8], [8, 8, 8]]
-    mlp_ratio: [2, [2, 2], [2, 2, 2]] #[2, [2, 2], [2, 2, 2]]
-    block_list: [1, [1, 1], [1, 1, 1]] # [6, [6, 6], [6, 6, 6]]
-    norm_type: "ln"
-    patch_merge_step: yes
-    patch_size_list: [16, 32, 64, 64] #[32, 128, 256, 256] #[64, 64, 32, 8]
-    scale: 4
-    # for harvard x8
-    attn_drop: 0.2
-    drop_path: 0.2
-    crop_batch_size: 16
 
 logger_config:
   base_path: ./log_file/
-  name: dcformer_mwsa
+  name: dcformer_mwsa_new
   file_mode: w

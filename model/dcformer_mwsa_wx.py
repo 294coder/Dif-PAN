@@ -13,7 +13,7 @@ from model.module.attention import MultiScaleWindowCrossAttention
 from model.module.layer_norm import LayerNorm, normalization
 from model.panformer import PanFormerEncoderLayer
 
-PLANES = 8
+PLANES = 4
 
 ################ MODULES #####################
 
@@ -293,7 +293,7 @@ class ChannelFuseBlock(nn.Module):
     def forward(self, x, y):
         # Pan + Ms 1,8,H,W + 1,8,H,W
         # x, y = inputs[0], inputs[1]
-
+        
         # x-> z
         # y-> x
         # RGB
@@ -641,7 +641,7 @@ class HighResolutionModule(nn.Module):
 
     def forward(self, inputs):
         x, y = inputs[0], inputs[1]
-
+        
         num_branches = self.num_branches
         # print("num_branches:", num_branches)
         fcc_w = self.fcc_relu(self.fcc_w)
@@ -742,13 +742,7 @@ class TransitionFPN(nn.Module):
                 ),
             )
             self.cfs_layers = ChannelFuseBlock(
-                outchannels,
-                outchannels,
-                spatial_size,
-                norm_type=norm_type,
-                num_heads=num_heads[-1]
-                if isinstance(num_heads, (list, tuple))
-                else num_heads,
+                outchannels, outchannels, spatial_size, norm_type=norm_type, num_heads=num_heads[-1] if isinstance(num_heads, (list, tuple)) else num_heads,
             )
 
         if self.num_branches == 3:
@@ -787,13 +781,7 @@ class TransitionFPN(nn.Module):
                 norm_layer=partial(normalization, "ln", spatial_size=spatial_size),
             )
             self.cfs_layers = ChannelFuseBlock(
-                inchannels[2],
-                inchannels[2],
-                spatial_size,
-                norm_type=norm_type,
-                num_heads=num_heads[-1]
-                if isinstance(num_heads, (list, tuple))
-                else num_heads,
+                inchannels[2], inchannels[2], spatial_size, norm_type=norm_type, num_heads=num_heads[-1] if isinstance(num_heads, (list, tuple)) else num_heads,
             )
 
             self.rs_w = nn.Parameter(
@@ -864,14 +852,14 @@ class TransitionFPN(nn.Module):
 @register_model("dcformer_mwsa_new")
 class DCFormerMWSA(BaseModel):
     # window_dict_train_reduce = {128: 16, 64: 8, 16: 2}
-    window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
+    # window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
     # window_dict_train_reduce = {128: 16, 64: 8, 32: 4}
-
+    
     # ablation
     # window_dict_train_reduce = {64: 8, 32: 4, 16: 2}
 
     # vis-ir_RS
-    # window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
+    window_dict_train_reduce = {64: 16, 32: 8, 16: 4}
 
     # window_dict_test_reduce = {128: 16, 64: 8, 32: 4}
     # window_dict_test_reduce = {512: 16, 256: 8, 128: 4}
@@ -1604,19 +1592,17 @@ if __name__ == "__main__":
 
     # torch.cuda.set_device('cuda:1')
 
-    device = "cuda:0"
-
     net = DCFormerMWSA(
         64,
         PLANES,
         "C",
         added_c=1,
-        channel_list=[8, [8, 16], [8, 16, 24]],  # [32, [32, 64], [32, 64, 96]],
+        channel_list=[8, [8, 16], [8, 16, 24]],
         num_heads=[4, [4, 4], [8, 8, 8]],
+        mlp_ratio=[1, [1, 1], [1, 1, 1]],
         attn_drop=0.0,
         drop_path=0.0,
         block_list=[2, [2, 2], [2, 2, 2]],
-        mlp_ratio=[1, [1, 1], [1, 1, 1]],
         norm_type="ln",
         patch_merge_step=False,
         patch_size_list=[
@@ -1627,7 +1613,7 @@ if __name__ == "__main__":
         ],  # [32, 128, 256, 256],  # [200, 200, 100, 25],
         scale=4,
         crop_batch_size=2,
-    ).to(device)
+    )  # .cuda()
 
     ########### test new patch merge model##########
     # harvard x8 test set shape: [1000, 1000, 500, 125]
@@ -1662,17 +1648,11 @@ if __name__ == "__main__":
     #         print(m.window_dict)
     #         print('----------'*6)
 
-    # size = 16
-    # ms = torch.randn(1, PLANES, size, size)  # .cuda()
-    # mms = torch.randn(1, PLANES, size*2, size*2)  # .cuda()
-    # lms = torch.randn(1, PLANES, size*4, size*4)  # .cuda()
-    # pan = torch.randn(1, 3, size*4, size*4)  # .cuda()
-
     size = 16
-    ms = torch.randn(1, PLANES, size, size).to(device)
-    mms = torch.randn(1, PLANES, size * 2, size * 2).to(device)
-    lms = torch.randn(1, PLANES, size * 4, size * 4).to(device)
-    pan = torch.randn(1, 1, size * 4, size * 4).to(device)
+    ms = torch.randn(1, PLANES, size, size)  # .cuda()
+    mms = torch.randn(1, PLANES, size*2, size*2)  # .cuda()
+    lms = torch.randn(1, PLANES, size*4, size*4)  # .cuda()
+    pan = torch.randn(1, 1, size*4, size*4)  # .cuda()
 
     # ms = torch.randn(1, 31, 64, 64).cuda()
     # mms = torch.randn(1, 31, 128, 128).cuda()
@@ -1697,7 +1677,7 @@ if __name__ == "__main__":
     # data = {"gt": lms, "up": lms, "rgb": pan, "lrhsi": ms}
 
     # net._set_window_dict(net.window_dict_train_reduce)
-
+    
     # sr = net._forward_implem(pan, lms, mms, ms)
     # loss = ((torch.randn(1, 1, size*4, size*4) - sr)**2).sum()
     # loss.backward()

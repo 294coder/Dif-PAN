@@ -87,7 +87,7 @@ class MoGFusionHead(nn.Module):
     def unfold_once(self, LR, LrMS, RGB):
         x = LrMS  # 4 times upsample of LR
         mms = F.interpolate(
-            LR,
+            LrMS,
             size=(LrMS.size(2) // 2, LrMS.size(3) // 2),
             mode="bilinear",
             align_corners=True,
@@ -393,19 +393,15 @@ class VSR_CAS(torch.nn.Module):
     network of 'Burst Denoising with Kernel Prediction Networks'
     """
 
-    def __init__(self, 
-                 channel0, 
-                 factor, 
-                #  P, 
-                 patch_size):
+    def __init__(self, channel0, factor, P, patch_size):
         super(VSR_CAS, self).__init__()
 
         self.channel0 = channel0
         self.up_factor = factor
         self.patch_size = patch_size
 
-        # self.P = torch.nn.Parameter(P)
-        # self.P.requires_grad = False
+        self.P = torch.nn.Parameter(P)
+        self.P.requires_grad = False
         self.acti = torch.nn.PReLU()
 
         self.delta_0 = torch.nn.Parameter(torch.tensor(0.1))
@@ -690,46 +686,40 @@ class VSR_CAS(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    from fvcore.nn import FlopCountAnalysis, flop_count_table
-    # import FlopCountAnalysis, flop_count_analysis
-    
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    LR = torch.randn(1, 31, 16, 16).cuda()
-    RGB = torch.randn(1, 3, 64, 64).cuda()
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # LR = torch.randn(1, 31, 16, 16).cuda()
+    # RGB = torch.randn(1, 3, 64, 64).cuda()
     # data = sio.loadmat("./P.mat")
     # P = data["P"]
     # P = torch.FloatTensor(P)
-    up_factor = 4
-    channel = 31
-    patch_size = 15
-    WEIGHT_DECAY = 1e-8  # params of ADAM
-    model = VSR_CAS(
-        channel0=channel, factor=up_factor, patch_size=patch_size
-    ).cuda()
-    pred = model(LR, RGB)
-    print(pred.shape)
+    # up_factor = 4
+    # channel = 31
+    # patch_size = 15
+    # WEIGHT_DECAY = 1e-8  # params of ADAM
+    # model = VSR_CAS(
+    #     channel0=channel, factor=up_factor, P=P, patch_size=patch_size
+    # ).cuda()
+    # pred = model(LR, RGB)
+    # print(pred.shape)
     # summary(model, input_size=[(31, 16, 16), (3, 64, 64)], batch_size=1)
-    print(flop_count_table(
-        FlopCountAnalysis(model, (LR, RGB))
-    ))
 
     # from model.dcformer_mwsa import DCFormerMWSA
 
-    # class SimpleNet(nn.Module):
-    #     def __init__(self) -> None:
-    #         super().__init__()
-    #         self.conv = nn.Conv2d(31, 31, 3, 1, 1)
+    class SimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = nn.Conv2d(31, 31, 3, 1, 1)
 
-    #     def _forward_implem(self, RGB, LrMS, mms, LR):
-    #         return self.conv(LrMS)
+        def _forward_implem(self, RGB, LrMS, mms, LR):
+            return self.conv(LrMS)
 
-    # fusionHeadNet = MoGFusionHead(
-    #     SimpleNet()
-    # )
+    fusionHeadNet = MoGFusionHead(
+        SimpleNet()
+    )
 
-    # LR = torch.randn(1, 31, 16, 16)
-    # LrMS = torch.randn(1, 31, 64, 64)
-    # RGB = torch.randn(1, 3, 64, 64)
+    LR = torch.randn(1, 31, 16, 16)
+    LrMS = torch.randn(1, 31, 64, 64)
+    RGB = torch.randn(1, 3, 64, 64)
 
-    # out = fusionHeadNet(LR, LrMS, RGB)
-    # print(out.shape)
+    out = fusionHeadNet(LR, LrMS, RGB)
+    print(out.shape)

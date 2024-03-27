@@ -10,12 +10,12 @@ class FLIRDataset(data.Dataset):
     def __init__(self, d: Union[dict, h5py.File]):
         self.d = d
         self.vis = torch.from_numpy(d["data"][:, 0:1].astype("float32"))  # rgb
-        self.ir = torch.from_numpy(d["data"][:, 1:].astype("float32"))  # ir_RS
+        self.ir = torch.from_numpy(d["data"][:, 1:].astype("float32"))  # ir
         self.gt = torch.from_numpy(d["data"][:].astype("float32"))  # gt
         self.ms = F.interpolate(
             self.ir, scale_factor=1 / 4, mode="bilinear", align_corners=False
         )
-        print('{:^20}{:^20}{:^20}{:^20}'.format('vis', 'ir_RS', 'ms', 'gt'))
+        print('{:^20}{:^20}{:^20}{:^20}'.format('vis', 'ir', 'ms', 'gt'))
         print('{:^20}{:^20}{:^20}{:^20}'.format(str(tuple(self.vis.shape)),
                                                 str(tuple(self.ir.shape)),
                                                 str(tuple(self.ms.shape)),
@@ -25,8 +25,8 @@ class FLIRDataset(data.Dataset):
         """
         output:
             vis [1, 64, 64] domain 1
-            ms [1, 16, 16] downsampled ir_RS 1/4
-            ir_RS [1, 64, 64] domain 2
+            ms [1, 16, 16] downsampled ir 1/4
+            ir [1, 64, 64] domain 2
             gt [2, 64, 64] 2 domains which give constrains
         Args:
             index: int
