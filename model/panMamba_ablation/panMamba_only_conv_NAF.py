@@ -1031,8 +1031,16 @@ if __name__ == "__main__":
     #     }
 
     # net = MambaBlock(4).to(device)
+    
+    #=======================
+    # 64: 7.4M 0.439G
+    # 128: 197M, 1.76G
+    # 256: 0.41G, 7.03G
+    # 512: 1.19G, 28.12G
+    # 1024: 4.34G, 112.5G
+    #=======================
 
-    net.eval()
+    # net.eval()
     for img_sz in [64, 128, 256, 512, 1024]:
         scale = 4
         gt_img_sz = img_sz // scale
@@ -1071,4 +1079,4 @@ if __name__ == "__main__":
         flops = FlopCountAnalysis(net, (img, cond))
         # flops.set_op_handle(**supported_ops)
         # print(flop_count_table(flops, max_depth=3))
-        print(flop_count_str(flops.total()))
+        print(flops.total() / 1e9, "G")
