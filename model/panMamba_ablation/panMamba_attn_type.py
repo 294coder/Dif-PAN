@@ -597,7 +597,7 @@ class MambaInjectionBlock(nn.Module):
                 prev_state_chan=None,
                 skip_state_chan=None,
                 post_norm=post_norm,
-                mlp_type='mlp',
+                mlp_type='gmlp',
                 # prev_state_gate=prev_state_gate,
                 **mamba_kwargs,
             )
@@ -621,7 +621,7 @@ class MambaInjectionBlock(nn.Module):
             prev_state_chan=prev_state_chan,
             skip_state_chan=skip_state_chan,
             post_norm=post_norm,
-            mlp_type='mlp',
+            mlp_type='gmlp',
             **mamba_kwargs,
         )
 
