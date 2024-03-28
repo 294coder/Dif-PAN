@@ -436,10 +436,12 @@ if __name__ == "__main__":
     # w/o smrb ahead qkv
     # q is pan k,v are lms: SAM 3.37
     # q is lms k,v are pan
-
+    
+    torch.cuda.set_device('cuda:1')
+    
     def _only_for_flops_count_forward(self, *args, **kwargs):
         return self._forward_implem(*args, **kwargs)
-
+    
     ms = torch.randn(1, 8, 16, 16).cuda()
     lms = torch.randn(1, 8, 64, 64).cuda()
     pan = torch.randn(1, 1, 64, 64).cuda()

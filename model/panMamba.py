@@ -545,7 +545,7 @@ class MambaInjectionBlock(nn.Module):
         dt_rank="auto",
         ssm_conv=[3, 11],
         ssm_ratio=2,
-        mlp_ratio=2,
+        mlp_ratio=4,
         forward_type="v4",
         use_ckpt=False,
         local_shift_size=0,
@@ -590,7 +590,7 @@ class MambaInjectionBlock(nn.Module):
                 ssm_d_state=local_d_state,
                 ssm_conv=ssm_local_conv,
                 ssm_dt_rank=dt_rank,
-                ssm_ratio=1,
+                ssm_ratio=2,
                 ssm_init='v0',
                 forward_type=forward_type,
                 use_checkpoint=use_ckpt,
@@ -621,7 +621,7 @@ class MambaInjectionBlock(nn.Module):
             prev_state_chan=prev_state_chan,
             skip_state_chan=skip_state_chan,
             post_norm=post_norm,
-            mlp_type='mlp',
+            mlp_type='gmlp',
             **mamba_kwargs,
         )
 
@@ -889,13 +889,9 @@ class NAFBlock(nn.Module):
             nn.Dropout(drop_out_rate) if drop_out_rate > 0.0 else nn.Identity()
         )
 
-        # self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
-        # self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
+        self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
 
-    def time_forward(self, time, mlp):
-        time_emb = mlp(time)
-        time_emb = rearrange(time_emb, "b c -> b c 1 1")
-        return time_emb.chunk(4, dim=1)
 
     def forward(self, x, cond):
         cond = F.interpolate(cond, size=x.shape[2:], mode="bilinear", align_corners=True)
@@ -913,7 +909,7 @@ class NAFBlock(nn.Module):
 
         x = self.dropout1(x)
 
-        y = inp + x # * self.beta
+        y = inp + x * self.beta
 
         x = self.norm2(y)
         x = self.conv4(x)
@@ -922,7 +918,7 @@ class NAFBlock(nn.Module):
 
         x = self.dropout2(x)
 
-        x = y + x # * self.gamma
+        x = y + x * self.gamma
 
         return x
 
@@ -1021,17 +1017,11 @@ class ConditionalNAFNet(BaseModel):
         if if_rope:
             self.rope = VisionRotaryEmbeddingFast(chan, pt_seq_len=pt_img_size, ft_seq_len=None)
 
-        self.intro = nn.Sequential(
-            nn.Conv2d(
-                in_channels=img_channel,
-                out_channels=width,
-                kernel_size=1,
-                stride=1,
-                groups=1,
-                bias=False,
-            ),
-            # Rearrange("b c h w -> b h w c"),
-        )
+        self.intro = nn.Conv2d(in_channels=img_channel, out_channels=width,
+                               kernel_size=3, stride=1, padding=1, bias=True)
+        
+        # self.intro = nn.Conv2d(in_channels=img_channel+condition_channel, out_channels=width,
+        #                        kernel_size=1, stride=1, bias=True)
 
         self.ending = nn.Conv2d(
             in_channels=width,
@@ -1135,7 +1125,7 @@ class ConditionalNAFNet(BaseModel):
                     ]
                 )
             )
-            self.lemm_downs.append(down(chan, down_type='conv', permute=True))
+            self.lemm_downs.append(down(chan, down_type='conv', permute=True, r=2, chan_r=ssm_chan_upscale[enc_i]))
             prev_ssm_chan = chan * ssm_ratios[enc_i]
             chan = chan * ssm_chan_upscale[enc_i]
             n_prev_blks += num
@@ -1170,7 +1160,7 @@ class ConditionalNAFNet(BaseModel):
         # LEMM layer
         print('=== init SSM decoder ===')
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
-            self.lemm_ups.append(up(chan, permute=True))
+            self.lemm_ups.append(up(chan, permute=True, chan_r=ssm_chan_upscale[::-1][dec_i]))
             # prev_chan_fn = lambda i: prev_ssm_chan #if i == 0 else chan * ssm_ratios[::-1][dec_i]
             chan = chan // ssm_chan_upscale[::-1][dec_i]
             pt_img_size *= 2
@@ -1217,8 +1207,11 @@ class ConditionalNAFNet(BaseModel):
         self.patch_merge = patch_merge
 
         # init
-        # print("============= init network =================")
-        # self.apply(self._init_weights)
+        print("============= init network =================")
+        self.apply(self._init_weights)
+        self.intro.weight.data = torch.tensor(
+                                    [[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]], dtype=torch.float32
+                                ).repeat(width, img_channel, 1, 1)
 
     def _init_weights(self, m: nn.Module):
         # print(type(m))
@@ -1250,6 +1243,7 @@ class ConditionalNAFNet(BaseModel):
         x = inp
         B, C, H, W = x.shape
 
+        # x = torch.cat([x, cond], dim=1)
         x = self.intro(x)
         if self.if_abs_pos:
             x = x + self.abs_pos
@@ -1346,6 +1340,8 @@ if __name__ == "__main__":
     device = "cuda:1"
     torch.cuda.set_device(device)
     
+    print('testing...')
+    
     # forwawrd_type v4 model: 5.917M
     # + using prev_ssm_state: 8.651M
     net = ConditionalNAFNet(
@@ -1353,21 +1349,21 @@ if __name__ == "__main__":
         condition_channel=1,
         out_channel=8,
         width=32,
-        middle_blk_nums=1,
+        middle_blk_nums=2,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[1,1,1],
-        ssm_dec_blk_nums=[1,1,1],
-        ssm_chan_upscale=[2,2,2],
+        ssm_enc_blk_nums=[3,2,2],
+        ssm_dec_blk_nums=[3,2,2],
+        ssm_chan_upscale=[1,2,2],
         ssm_ratios=[2,2,2],
         window_sizes=[8,8,8],
-        ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
-        ssm_dec_d_states=[[None, 32], [16, 32], [16, 32]],
-        ssm_enc_convs=[[7, 11], [7, 11], [None, 11]],
-        ssm_dec_convs=[[None, 11], [7, 11], [7, 11]],
+        ssm_enc_d_states=[[32, 32], [32, 32], [None, 32]],
+        ssm_dec_d_states=[[None, 32], [32, 32], [32, 32]],
+        ssm_enc_convs=[[11, 11], [11, 11], [None, 11]],
+        ssm_dec_convs=[[None, 11], [11, 11], [11, 11]],
         
         pt_img_size=64,
         if_rope=False,
@@ -1437,5 +1433,5 @@ if __name__ == "__main__":
         net.forward = net._forward_implem
         flops = FlopCountAnalysis(net, (img, cond))
         flops.set_op_handle(**supported_ops)
-        # print(flop_count_table(flops, max_depth=3))
-        print(flops.total() / 1e9, 'G')
+        print(flop_count_table(flops, max_depth=3))
+        # print(flops.total() / 1e9, 'G')

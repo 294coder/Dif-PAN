@@ -1,4 +1,3 @@
-from re import X
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -383,29 +382,29 @@ class Attention(nn.Module):
         )
 
         # For 2D image
-        # q, k, v = map(
-        #     lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
-        # )
+        q, k, v = map(
+            lambda t: rearrange(t, "b (h c) x y -> b h c (x y)", h=self.heads), qkv
+        )
 
-        # q = q * self.scale
+        q = q * self.scale
 
-        # sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
-        # attn = sim.softmax(dim=-1)
-        # out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
+        sim = torch.einsum("b h d i, b h d j -> b h i j", q, k)
+        attn = sim.softmax(dim=-1)
+        out = torch.einsum("b h i j, b h d j -> b h i d", attn, v)
 
         # out = rearrange(out, "b h (x y) d -> b (h d) x y", x=h, y=w)
 
         # For 1D sequence
-        q = q * self.scale
+        # q = q * self.scale
 
-        q = q.softmax(dim=-2)
-        k = k.softmax(dim=-1)
+        # q = q.softmax(dim=-2)
+        # k = k.softmax(dim=-1)
         # v = v / n
 
-        context = torch.einsum("b h n d, b h n e -> b h d e", k, v)
-        out = torch.einsum("b h d e, b h n d -> b h e n", context, q)
-        out = rearrange(out, "b h e n -> b n (h e)")
-        out = self.to_out(out)
+        # context = torch.einsum("b h n d, b h n e -> b h d e", k, v)
+        # out = torch.einsum("b h d e, b h n d -> b h e n", context, q)
+        # out = rearrange(out, "b h e n -> b n (h e)")
+        # out = self.to_out(out)
 
         return out.transpose(1, 2)
 

@@ -25,17 +25,17 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-python main.py --proj_name lformer_reduced --arch lformer_R \
--b 128 --device 'cuda:1' --dataset 'wv3' \
---warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'lformer arch without reduce on wv3 dataset' \
---logger_on --log_metrics \
+# python main.py --proj_name lformer_swin --arch lformer \
+# -b 32 --device 'cuda:2' --dataset 'cave_x4' \
+# --warm_up_epochs 10 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'lformer arch without reduce on cave_x4 dataset' \
+# --logger_on --log_metrics \
 
 ## MIMO_SST arch
 # python main.py --proj_name MIMO_SST --arch MIMO_SST \
-# -b 128 --device 'cuda:0' --dataset 'harvard_x8' \
-# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'MIMO_SST reduced arch on harvard_x8 dataset' \
+# -b 64 --device 'cuda:1' --dataset 'qb' \
+# --warm_up_epochs 10 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+# --loss l1ssim --val_n_epoch 20 --comment 'MIMO_SST reduced arch on qb dataset' \
 # --logger_on --log_metrics \
 
 ## panMamba_zhouman arch
@@ -46,12 +46,12 @@ python main.py --proj_name lformer_reduced --arch lformer_R \
 # --logger_on --log_metrics \
 
 ## panMamba arch
-# python main.py --proj_name panMamba --arch panMamba \
-# -b 11 --device 'cuda:0' --dataset 'cave_x8' \
-# --warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset' \
-# --logger_on --log_metrics \
-# --pretrain --pretrain_id '3e0hlvd1' --non_load_strict
+python main.py --proj_name panMamba --arch panMamba \
+-b 32 --device 'cuda:1' --dataset 'gf2' \
+--warm_up_epochs 0 --num_worker 6 -e 2000 --aug_probs 0. 0. \
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on gf2 dataset' \
+--logger_on --log_metrics \
+# --pretrain --pretrain_id '1x5afbcw' --non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \

@@ -400,9 +400,9 @@ if __name__ == "__main__":
     # print(args)
 
     if (not args.ddp) and (not args.dp): 
-        print('using one gpu')
+        print('>>> using one gpu')
         main(args.device, args)
     else:
-        print('SPAWN: using multiple gpus')
+        print('>>> SPAWN: using multiple gpus')
         # TODO: resort to accelerator method, to avoid multi-processing dataloader using more RAM
         mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)

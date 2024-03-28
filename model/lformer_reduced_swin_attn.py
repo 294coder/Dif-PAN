@@ -364,7 +364,7 @@ class MSReversibleRefine(nn.Module):
             
         # reflashed_attn = reuse_attn
         refined_lms = F.interpolate(refined_lms, size=hp_in.shape[-2:], mode='bilinear', align_corners=True)
-        reflashed_out = refined_lms
+        reflashed_out = refined_lmsH
         refined_lms = self.res_block(refined_lms)
         reverse_out = torch.cat([refined_lms, hp_in], dim=1)
         out = self.fuse_conv(reverse_out)

@@ -29,6 +29,17 @@ max_norm: 0.03
 ema_decay: 0.999
 
 path:
+  # pansharpening
+  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+
+  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+
+  qb_train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  qb_val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+
+  # hyperspectral multispectral image fusion
   cave_x4_train_path: "/volsparse1/dataset/HISR/cave_x8/train_cave(with_up)x8_rgb_16.h5"
   #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
   cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
@@ -45,7 +56,7 @@ path:
 
 
 network_configs:
-  in_chan: 31
+  in_chan: 4
 
 
 

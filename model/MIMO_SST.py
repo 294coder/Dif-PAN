@@ -552,11 +552,13 @@ class ResBlock(nn.Module):
 class Net(BaseModel):
     def __init__(self, in_chan=31):
         super(Net, self).__init__()
-        inp_channels = 130
+        pan_chan = 1
+        inp_channels = 48*2+in_chan+pan_chan
         dim = 48
         num_blocks = [1, 1, 1, 1]
         heads = [1, 1, 1, 1]
         ffn_expansion_factor = 2.66
+        
         bias = False
         LayerNorm_type = "WithBias"
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
@@ -611,7 +613,7 @@ class Net(BaseModel):
             ]
         )
         self.Conv3_64 = nn.Conv2d(
-            in_channels=3, out_channels=48, kernel_size=3, padding=(1, 1)
+            in_channels=pan_chan, out_channels=48, kernel_size=3, padding=(1, 1)
         )
         self.Conv31_64 = nn.Conv2d(
             in_channels=in_chan, out_channels=48, kernel_size=3, padding=(1, 1)
@@ -726,12 +728,12 @@ if __name__ == "__main__":
 
     loss_fn = get_loss("l1ssim")
 
-    ms = torch.randn(1, 31, 16, 16).cuda()
-    lms = torch.randn(1, 31, 64, 64).cuda()
-    pan = torch.randn(1, 3, 64, 64).cuda()
-    gt = torch.randn(1, 31, 64, 64).cuda()
+    ms = torch.randn(1, 8, 16, 16)#.cuda()
+    lms = torch.randn(1, 8, 64, 64)#.cuda()
+    pan = torch.randn(1, 1, 64, 64)#.cuda()
+    gt = torch.randn(1, 8, 64, 64)#.cuda()
 
-    net = Net().cuda()
+    net = Net(lms.shape[1])#.cuda()
     # sr, loss = net.train_step(None, lms, pan, gt, loss_fn)
     
     # net.eval()

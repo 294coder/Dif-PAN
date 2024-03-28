@@ -25,9 +25,9 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:0"
+device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "cave_x8"
+dataset_type = "qb"
 save_format = "mat"
 full_res = False
 split_patch = False
@@ -108,6 +108,8 @@ print("=" * 50)
 
 # p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
+# p = './weight/MIMO_SST_1qpqmmnn.pth'
+
 # ========================================================
 
 # ================HISI CAVE checkpoint=============
@@ -135,7 +137,7 @@ print("=" * 50)
 
 # p = './weight/dcformer_2hwz3dgf.pth'
 
-p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
+# p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
 
 ##### harvard_x8
 # p = "./weight/dcformer_zeavxkwx.pth"  # dcformer_mwsa ghost module
@@ -182,6 +184,8 @@ p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
 # p = './weight/lformer_3dvlsog6.pth'
 
 # p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+
+# p = './weight/MIMO_SST_eucdab2u.pth'
 # =================================================
 
 # ===============QB checkpoint=====================
@@ -197,6 +201,8 @@ p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
 # p = './weight/pannet_3knmo9wy.pth'  # pannet
 
 # p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
+
+p = './weight/MIMO_SST_2xfzvhd8.pth'
 # =================================================
 
 # ==============FLIR checkpoint===================
@@ -248,7 +254,7 @@ p = './weight/MIMO_SST_k03s5d7f.pth'  # MIMO_SST net
 
 if dataset_type == "wv3":
     if not full_res:
-        path = "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
+        path = "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
         path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"

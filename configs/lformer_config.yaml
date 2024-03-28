@@ -4,35 +4,33 @@ optimizer:
   weight_decay: !!float 1e-6
 
 lr_scheduler:
-  name: "multi_step"
-  milestones: [300, 1600]
-  gamma: 0.1
+  # name: "multi_step"
+  # milestones: [300, 1600]
+  # gamma: 0.1
   # name: 'identity'
 
-  # name: "plateau"
-  # mode: "min"
-  # threshold: !!float 5e-6 # l1
-  # min_lr: !!float 1e-6
-  # patience: 30
-  # factor: !!float 0.2
-  # cooldown: 10
+  name: "plateau"
+  mode: "min"
+  threshold: !!float 5e-6 # l1
+  min_lr: !!float 1e-6
+  patience: 20
+  factor: !!float 0.2
+  cooldown: 10
 
 max_norm: 0.03
 ema_decay: 0.999
 
 path:
-  wv3_train_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
-  wv3_val_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
 
-  gf2_train_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
-  gf2_val_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
-  #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
   qb_train_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
   qb_val_path: "/Data3/cao/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
 
   cave_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
   cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 
 network_configs:
@@ -43,10 +41,10 @@ network_configs:
   #   hp_dim: 64
   #   n_stage: 5
   lformer:
-    pan_dim: 1
-    lms_dim: 4 #102 #128
+    pan_dim: 3
+    lms_dim: 31 #102 #128
     attn_dim: 32
-    hp_dim: 32
+    hp_dim: 48
     n_stage: 5
     patch_merge: yes
     crop_batch_size: 64
