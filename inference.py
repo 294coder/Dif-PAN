@@ -27,10 +27,10 @@ from utils.visualize import invert_normalized
 
 device = "cuda:1"
 torch.cuda.set_device(device)
-dataset_type = "qb"
+dataset_type = "wv3"
 save_format = "mat"
 full_res = False
-split_patch = False
+split_patch = True
 patch_size = 64
 ergas_ratio = 4
 patch_size_list = [
@@ -55,7 +55,7 @@ loop_func = (
         patch_size_list=patch_size_list,
     )
 )
-name = "MIMO_SST"
+name = "panMamba"
 subarch = ""
 dl_bs = 1
 crop_bs = 2
@@ -109,6 +109,8 @@ print("=" * 50)
 # p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 
 # p = './weight/MIMO_SST_1qpqmmnn.pth'
+
+p = './weight/panMamba_llib22wl.pth'
 
 # ========================================================
 
@@ -202,7 +204,7 @@ print("=" * 50)
 
 # p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
 
-p = './weight/MIMO_SST_2xfzvhd8.pth'
+# p = './weight/MIMO_SST_2xfzvhd8.pth'
 # =================================================
 
 # ==============FLIR checkpoint===================
@@ -300,7 +302,7 @@ else:
 # model = VanillaPANNet(8, 32).to('cuda:0')
 
 config = yaml_load(name)
-if name in ["panformer", "dcformer", "lformer"]:
+if name in ["panformer", "dcformer", "lformer", "panMamba"]:
     full_arch = name + "_" + subarch if subarch != "" else name
     model = build_network(full_arch, **config["network_configs"][full_arch])
 else:

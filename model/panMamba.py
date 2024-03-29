@@ -30,6 +30,9 @@ sys.path.append("../")
 from model.module.vmamba_module_v3 import VSSBlock
 from model.module.layer_norm import LayerNorm as LayerNorm2d
 from model.base_model import BaseModel, register_model, PatchMergeModule
+from utils import get_local
+
+get_local.activate()
 
 
 def exists(x):
@@ -702,7 +705,7 @@ class MambaInjectionBlock(nn.Module):
         # enhance v2
         
         # local ssm state to global ssm state
-        if self.local_state_to_global and self.mamba.prev_state_gate:
+        if self.local_state_to_global and self.mamba.prev_state_gate and local_ssm_state is not None:
             local_to_global_sta = reduce(local_ssm_state, '(b w) d n -> b d n', 'mean', b=b)
             if prev_global_state is not None:
                 prev_global_state = local_to_global_sta + prev_global_state
@@ -749,7 +752,8 @@ class UniSequential(nn.Module):
         for mod in self.mods[1:]:
             outp = mod(outp, cond)
         return outp
-        
+    
+    @get_local('outp', 'global_state')
     def LEMM_enc_forward(self, 
                          feat, 
                          cond,
@@ -993,6 +997,7 @@ class ConditionalNAFNet(BaseModel):
         ssm_chan_upscale=[],
         ssm_enc_d_states=[],
         ssm_dec_d_states=[],
+        ssm_local_to_global=[],
         window_sizes=[],
         # model settings
         upscale=1,
@@ -1007,6 +1012,9 @@ class ConditionalNAFNet(BaseModel):
         self.if_abs_pos = if_abs_pos
         self.rope = if_rope
         self.pt_img_size = pt_img_size
+        
+        if len(ssm_local_to_global) == 0:
+            ssm_local_to_global = [False] * len(ssm_enc_blk_nums)
         
         # # TODO: only support global ssm state has the same dimension
         # assert len(set(list(zip(ssm_d_states))[-1])) == 1, 'only support global ssm state has the same dimension'
@@ -1120,6 +1128,7 @@ class ConditionalNAFNet(BaseModel):
                             drop_path=inter_dpr[n_prev_blks + i],
                             prev_state_chan=prev_state_chan_fn(i, mod='enc'),
                             local_shift_size=0,
+                            local_state_to_global=ssm_local_to_global[enc_i],
                         )
                         for i in range(num)
                     ]
@@ -1146,6 +1155,7 @@ class ConditionalNAFNet(BaseModel):
                     ssm_ratio=ssm_ratios[-1],
                     drop_path=inter_dpr[n_prev_blks + i],
                     prev_state_chan=prev_state_chan_fn(i, mod='mid'),
+                    local_state_to_global=ssm_local_to_global[-1],
                     # prev_state_gate=use_prev_ssm_state if i != 0 else False
                 )
                 for i in range(middle_blk_nums)
@@ -1180,6 +1190,7 @@ class ConditionalNAFNet(BaseModel):
                             prev_state_chan=prev_state_chan_fn(i, mod='dec'),
                             skip_state_chan=chan if i == 0 else None,  # assert skip_state_chan == chan
                             local_shift_size=0,
+                            local_state_to_global=ssm_local_to_global[::-1][dec_i],
                         )
                         for i in range(num)
                     ],
@@ -1357,7 +1368,7 @@ if __name__ == "__main__":
         
         ssm_enc_blk_nums=[3,2,2],
         ssm_dec_blk_nums=[3,2,2],
-        ssm_chan_upscale=[1,2,2],
+        ssm_chan_upscale=[1,3,2],
         ssm_ratios=[2,2,2],
         window_sizes=[8,8,8],
         ssm_enc_d_states=[[32, 32], [32, 32], [None, 32]],
@@ -1415,7 +1426,7 @@ if __name__ == "__main__":
         
         # ## find unused params
         # for n, p in net.named_parameters():
-        #     if p.grad is None:
+        #     if p.grad is None: 
         #         print(n, "has no grad")
 
         # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))

@@ -143,9 +143,14 @@ def ref_for_loop(model,
         # attns = cache['MSReversibleRefine.forward']
         # # attns = cache['FirstAttn.forward']
         
+        cache = get_local().cache
+        feat_ssm_states = cache['UniSequential.LEMM_enc_forward']
+        
         # torch.save(attns, f'/volsparse1/czh/exps/fcformer-bk/visualized_img/attns/attns_{i}.pth')
-        # print('saved pth file...')
-        # get_local.clear()
+        
+        # torch.save(feat_ssm_states, f'/Data2/ZiHanCao/exps/panformer/visualized_img/feat_ssm_states/feat_ssm_states_{i}.pth')
+        print('saved pth file...')
+        get_local.clear()
                 
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
