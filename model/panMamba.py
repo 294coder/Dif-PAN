@@ -600,12 +600,13 @@ class MambaInjectionBlock(nn.Module):
                 prev_state_chan=None,
                 skip_state_chan=None,
                 post_norm=post_norm,
-                mlp_type='mlp',
+                mlp_type='gmlp',
                 # prev_state_gate=prev_state_gate,
                 **mamba_kwargs,
             )
             # self.norm = norm_layer(inner_chan)
-            self.enhanced_factor = nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True)
+            self.enhanced_factor = nn.Parameter(torch.zeros(1, 1, 1, inner_chan), requires_grad=True)
+            nn.init.trunc_normal_(self.enhanced_factor, std=0.02)
         
         self.mamba = VSSBlock(
             hidden_dim=inner_chan,
@@ -753,7 +754,7 @@ class UniSequential(nn.Module):
             outp = mod(outp, cond)
         return outp
     
-    @get_local('outp', 'global_state')
+    # @get_local('outp', 'global_state')
     def LEMM_enc_forward(self, 
                          feat, 
                          cond,
@@ -825,7 +826,7 @@ class NAFBlock(nn.Module):
             padding=0,
             stride=1,
             groups=1,
-            bias=True,
+            bias=False,
         )
         self.conv2 = nn.Conv2d(
             in_channels=dw_channel,
@@ -843,7 +844,7 @@ class NAFBlock(nn.Module):
             padding=0,
             stride=1,
             groups=1,
-            bias=True,
+            bias=False,
         )
 
         # Simplified Channel Attention
@@ -856,7 +857,7 @@ class NAFBlock(nn.Module):
                 padding=0,
                 stride=1,
                 groups=1,
-                bias=True,
+                bias=False,
             ),
         )
 
@@ -871,7 +872,7 @@ class NAFBlock(nn.Module):
             padding=0,
             stride=1,
             groups=1,
-            bias=True,
+            bias=False,
         )
         self.conv5 = nn.Conv2d(
             in_channels=ffn_channel // 2,
@@ -880,7 +881,7 @@ class NAFBlock(nn.Module):
             padding=0,
             stride=1,
             groups=1,
-            bias=True,
+            bias=False,
         )
 
         self.norm1 = LayerNorm2d(c)
@@ -1038,7 +1039,7 @@ class ConditionalNAFNet(BaseModel):
             padding=1,
             stride=1,
             groups=1,
-            bias=False,
+            bias=True,
         )
 
         ## main body
@@ -1167,12 +1168,18 @@ class ConditionalNAFNet(BaseModel):
         
 
         ## decoder
+        # skip scales
+        self.skip_scales = nn.ParameterList([])
+        
         # LEMM layer
         print('=== init SSM decoder ===')
         for dec_i, num in enumerate(reversed(ssm_dec_blk_nums)):
             self.lemm_ups.append(up(chan, permute=True, chan_r=ssm_chan_upscale[::-1][dec_i]))
             # prev_chan_fn = lambda i: prev_ssm_chan #if i == 0 else chan * ssm_ratios[::-1][dec_i]
             chan = chan // ssm_chan_upscale[::-1][dec_i]
+            self.skip_scales.append(
+                nn.Parameter(torch.zeros(1, 1, 1, chan), requires_grad=True)
+            )
             pt_img_size *= 2
 
             self.lemm_decoders.append(
@@ -1197,13 +1204,16 @@ class ConditionalNAFNet(BaseModel):
                 )
             )
             n_prev_blks += num
-            prev_ssm_chan = chan * ssm_ratios[-1]
+            prev_ssm_chan = chan * ssm_ratios[::-1][dec_i]
             # print('==='*10)
             
         # NAF layer
         for dec_i, num in enumerate(naf_dec_blk_nums):
             self.naf_ups.append(up(chan))
             chan = chan // naf_chan_upscale[::-1][dec_i]
+            self.skip_scales.append(
+                nn.Parameter(torch.zeros(1, 1, 1, chan), requires_grad=True)
+            )
             pt_img_size *= 2
             self.naf_decoders.append(
                 UniSequential(
@@ -1220,21 +1230,22 @@ class ConditionalNAFNet(BaseModel):
         # init
         print("============= init network =================")
         self.apply(self._init_weights)
-        self.intro.weight.data = torch.tensor(
-                                    [[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]], dtype=torch.float32
-                                ).repeat(width, img_channel, 1, 1)
+        # self.intro.weight.data = torch.tensor(
+        #                             [[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]], dtype=torch.float32
+        #                         ).repeat(width, img_channel, 1, 1)
 
     def _init_weights(self, m: nn.Module):
         # print(type(m))
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=0.02)
+            nn.init.trunc_normal_(m.weight, std=0.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="leaky_relu")
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
@@ -1284,10 +1295,11 @@ class ConditionalNAFNet(BaseModel):
         # print('unisequenctial middle layer')
         x, states = self.middle_blks.LEMM_enc_forward(x, cond, c_shuffle, states)
 
-        for i, (decoder, up, enc_skip, enc_state_skip) in enumerate(zip(self.lemm_decoders, self.lemm_ups, lemm_encs[::-1], encs_states[::-1])):
+        for i, (decoder, up, skip_scale, enc_skip, enc_state_skip) in enumerate(zip(self.lemm_decoders, self.lemm_ups, self.skip_scales,
+                                                                        lemm_encs[::-1], encs_states[::-1])):
             # print(f'unisequenctial decoder {i}')
             x = up(x)
-            x = torch.cat([x, enc_skip], dim=-1)
+            x = torch.cat([x, enc_skip * skip_scale], dim=-1)
             # print(x.shape[-1], enc_skip.shape[1])
             x, states = decoder.LEMM_dec_forward(x, cond, c_shuffle, states, enc_state_skip)
             
@@ -1356,9 +1368,9 @@ if __name__ == "__main__":
     # forwawrd_type v4 model: 5.917M
     # + using prev_ssm_state: 8.651M
     net = ConditionalNAFNet(
-        img_channel=8,
-        condition_channel=1,
-        out_channel=8,
+        img_channel=31,
+        condition_channel=3,
+        out_channel=31,
         width=32,
         middle_blk_nums=2,
         
@@ -1366,13 +1378,13 @@ if __name__ == "__main__":
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[3,2,2],
-        ssm_dec_blk_nums=[3,2,2],
-        ssm_chan_upscale=[1,3,2],
-        ssm_ratios=[2,2,2],
-        window_sizes=[8,8,8],
-        ssm_enc_d_states=[[32, 32], [32, 32], [None, 32]],
-        ssm_dec_d_states=[[None, 32], [32, 32], [32, 32]],
+        ssm_enc_blk_nums=[4,3,2],
+        ssm_dec_blk_nums=[4,3,2],
+        ssm_chan_upscale=[1,2,2],
+        ssm_ratios=[3,2,1],
+        window_sizes=[8,8,None],
+        ssm_enc_d_states=[[16, 32], [16, 32], [None, 32]],
+        ssm_dec_d_states=[[None, 32], [16, 32], [16, 32]],
         ssm_enc_convs=[[11, 11], [11, 11], [None, 11]],
         ssm_dec_convs=[[None, 11], [11, 11], [11, 11]],
         
@@ -1410,8 +1422,8 @@ if __name__ == "__main__":
     for img_sz in [64]:
         scale = 4
         gt_img_sz = img_sz // scale
-        chan = 8
-        pan_chan = 1
+        chan = 31
+        pan_chan = 3
         ms = torch.randn(1, chan, gt_img_sz, gt_img_sz).to(device)
         img = torch.randn(1, chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
         cond = torch.randn(1, pan_chan, gt_img_sz * scale, gt_img_sz * scale).to(device)
@@ -1424,10 +1436,19 @@ if __name__ == "__main__":
         # loss.backward()
         # print(loss)
         
-        # ## find unused params
+        # ## find unused params and big-normed gradient
+        # d_grads = {}
         # for n, p in net.named_parameters():
         #     if p.grad is None: 
         #         print(n, "has no grad")
+        #     else:
+        #         p_sum = torch.abs(p.grad).sum().item()
+        #         d_grads[n] = p_sum
+            
+        # # topk
+        # d_grads = dict(sorted(d_grads.items(), key=lambda item: item[1], reverse=True))
+        # for k, v in list(d_grads.items())[:20]:
+        #     print(k, v)
 
         # out = net(img.reshape(1, 4, -1).flatten(2).transpose(1, 2))
 
@@ -1445,4 +1466,4 @@ if __name__ == "__main__":
         flops = FlopCountAnalysis(net, (img, cond))
         flops.set_op_handle(**supported_ops)
         print(flop_count_table(flops, max_depth=3))
-        # print(flops.total() / 1e9, 'G')
+        print(flops.total() / 1e9, 'G')

@@ -215,7 +215,7 @@ def train(
                 context = model.no_sync if grad_accm and ddp else nullcontext
                 with context():
                     step_loss_backward_partial(grad_accum=grad_accm)
-                if grad_accm:
+                if grad_accm and False:
                     logger.print("*" * 20, "grad_accm", "*" * 20)
             else:
                 step_loss_backward_partial(grad_accum=False)

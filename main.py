@@ -150,7 +150,7 @@ def main(local_rank, args):
 
     # optimization
     if args.grad_accum_ep is not None:
-        lr_adjust_ratio = args.grad_accum_ep
+        lr_adjust_ratio = 1.0 #args.grad_accum_ep
     else:
         lr_adjust_ratio = 1.0
     args.optimizer.lr *= lr_adjust_ratio
