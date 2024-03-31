@@ -1325,7 +1325,7 @@ class ConditionalNAFNet(BaseModel):
         if patch_merge:
             _patch_merge_model = PatchMergeModule(
                 self,
-                crop_batch_size=12,
+                crop_batch_size=8,
                 patch_size_list=[16, 16 * self.upscale, 16 * self.upscale],
                 scale=self.upscale,
                 patch_merge_step=self.patch_merge_step,
@@ -1360,7 +1360,7 @@ if __name__ == "__main__":
     from torch.cuda import memory_summary
     import colored_traceback.always
 
-    device = "cuda:1"
+    device = "cuda:2"
     torch.cuda.set_device(device)
     
     print('testing...')
@@ -1372,14 +1372,14 @@ if __name__ == "__main__":
         condition_channel=3,
         out_channel=31,
         width=32,
-        middle_blk_nums=3,
+        middle_blk_nums=2,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[4,3,3],
-        ssm_dec_blk_nums=[4,3,3],
+        ssm_enc_blk_nums=[4,3,2],
+        ssm_dec_blk_nums=[4,3,2],
         ssm_chan_upscale=[1,2,2],
         ssm_ratios=[3,2,1],
         window_sizes=[8,8,None],

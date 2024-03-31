@@ -5,18 +5,12 @@ import os.path as osp
 
 import h5py
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 import torch.utils.data as data
-import time
+import torch.distributed as dist
 import colored_traceback.always
 from wandb.util import generate_id
 
-from datasets.FLIR_2 import FLIRDataset
-from datasets.HISR import HISRDatasets
-from datasets.TNO import TNODataset
-from datasets.gf import GF2Datasets
-from datasets.wv3 import WV3Datasets, make_datasets
 from engine import train
 from model import build_network
 from utils import (
@@ -34,7 +28,6 @@ from utils import (
     BestMetricSaveChecker,
     set_all_seed,
     get_loss,
-    get_fusion_dataset
 )
 
 
@@ -176,9 +169,10 @@ def main(local_rank, args):
             strict=args.non_load_strict,
         )
         if is_main_process():
-            print("*" * 20, f"load pretrain weight id: {args.pretrain_id}", "*" * 20)
+            print("=" * 20, f"load pretrain weight id: {args.pretrain_id}", "=" * 20)
 
     # resume training
+    # TODO: now this code clip is not used, try to clear the usage
     if args.load:
         args.resume = "allow"
         p = osp.join(
@@ -236,9 +230,13 @@ def main(local_rank, args):
         )
     else:
         if args.dataset == "flir":
+            from datasets.FLIR_2 import FLIRDataset
+            
             train_ds = FLIRDataset(args.path.base_dir, "train")
             val_ds = FLIRDataset(args.path.base_dir, "test")
         elif args.dataset == "tno":
+            from datasets.TNO import TNODataset
+        
             train_ds = TNODataset(
                 args.path.base_dir, "train", aug_prob=args.aug_probs[0]
             )
@@ -267,27 +265,29 @@ def main(local_rank, args):
                     if args.dataset in k:
                         train_path = getattr(args.path, f"{args.dataset}_train_path")
                         val_path = getattr(args.path, f"{args.dataset}_val_path")
-            assert (
-                train_path is not None and val_path is not None
-            ), "train_path and val_path should not be None"
+            assert train_path is not None and val_path is not None, "train_path and val_path should not be None"
 
-            h5_train, h5_val = (
-                h5py.File(train_path),
-                h5py.File(val_path),
-            )
+            h5_train, h5_val = h5py.File(train_path), h5py.File(val_path),
+            
             if args.dataset in ["wv3", "qb"]:
+                from datasets.wv3 import WV3Datasets, make_datasets
+                
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (
                     WV3Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
             elif args.dataset == "gf2":
+                from datasets.gf import GF2Datasets
+                
                 d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
                 train_ds, val_ds = (
                     GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
                     GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
                 )
             elif args.dataset[:4] == "cave" or args.dataset[:7] == "harvard":
+                from datasets.HISR import HISRDatasets
+                
                 keys = ["LRHSI", "HSI_up", "RGB", "GT"]
                 if args.dataset.split("-")[-1] == "houston":
                     from einops import rearrange

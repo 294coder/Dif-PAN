@@ -25,10 +25,10 @@
 #--pretrain --pretrain_id 2g9q0m22
 
 ## lformer arch
-# python main.py --proj_name lformer_swin --arch lformer \
-# -b 32 --device 'cuda:2' --dataset 'cave_x4' \
+# python main.py --proj_name lformer_R --arch lformer_R \
+# -b 64 --device 'cuda:0' --dataset 'gf2' \
 # --warm_up_epochs 10 --num_worker 6 -e 2000 --aug_probs 0. 0. \
-# --loss l1ssim --val_n_epoch 20 --comment 'lformer arch without reduce on cave_x4 dataset' \
+# --loss l1ssim --val_n_epoch 10 --comment 'lformer arch without reduce on gf2 dataset' \
 # --logger_on --log_metrics \
 
 ## MIMO_SST arch
@@ -47,11 +47,11 @@
 
 ## panMamba arch
 python main.py --proj_name panMamba --arch panMamba \
--b 22 --device 'cuda:2' --dataset 'gf2' \
+-b 6 --device 'cuda:0' --dataset 'cave_x8' \
 --warm_up_epochs 0 --num_worker 4 -e 2000 --aug_probs 0. 0. \
---loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on gf2 dataset' \
---logger_on --log_metrics #--grad_accum_ep 3 \
-# --pretrain --pretrain_id '16g8blea' --non_load_strict
+--loss l1ssim --val_n_epoch 20 --comment 'panMamba small config on cave_x8 dataset' \
+--logger_on --log_metrics --grad_accum_ep 2 \
+--pretrain --pretrain_id '32s6xjat' --non_load_strict
 
 ## dcformer arch
 # python main.py --proj_name lformer_eccv --arch lformer \
