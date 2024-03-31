@@ -1,6 +1,6 @@
 import os
 
-os.environ["MPLCONFIGDIR"] = ".hypothesis/"
+os.environ["MPLCONFIGDIR"] = ".cache/.hypothesis/"
 os.environ["HF_HOME"] = ".cache/transformers"
 os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
@@ -61,7 +61,7 @@ from utils.network_utils import (
     get_local
 )
 from utils.visualize import viz_batch, res_image, get_spectral_image_ready
-from utils.inference_helper_func import ref_for_loop, unref_for_loop, find_data_path
+from utils.inference_helper_func import ref_for_loop, unref_for_loop, find_data_path, find_key_args_in_log
 from utils.loss_utils import get_loss, accum_loss_dict, ave_ep_loss, ave_multi_rank_dict
 from utils.save_checker import BestMetricSaveChecker
 from utils.train_utils import get_fusion_dataset

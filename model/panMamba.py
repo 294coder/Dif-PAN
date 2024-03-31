@@ -1372,14 +1372,14 @@ if __name__ == "__main__":
         condition_channel=3,
         out_channel=31,
         width=32,
-        middle_blk_nums=2,
+        middle_blk_nums=3,
         
         naf_enc_blk_nums=[],
         naf_dec_blk_nums=[],
         naf_chan_upscale=[],
         
-        ssm_enc_blk_nums=[4,3,2],
-        ssm_dec_blk_nums=[4,3,2],
+        ssm_enc_blk_nums=[4,3,3],
+        ssm_dec_blk_nums=[4,3,3],
         ssm_chan_upscale=[1,2,2],
         ssm_ratios=[3,2,1],
         window_sizes=[8,8,None],

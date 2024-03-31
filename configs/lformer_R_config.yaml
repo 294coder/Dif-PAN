@@ -28,8 +28,8 @@ path:
   gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
 network_configs:
-  pan_dim: 1
-  lms_dim: 8 #102 #128
+  pan_dim: 3
+  lms_dim: 31 #102 #128
   attn_dim: 64
   hp_dim: 64
   n_stage: 5

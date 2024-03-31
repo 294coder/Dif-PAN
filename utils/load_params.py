@@ -38,6 +38,7 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
                 if s_param.data.shape != param.data.shape:
                     if strict:
                         raise RuntimeError('ema model load failed! shape of params does not match!')
+                        exit(-1)  # handle the Exception
                     else:
                         warn(f'skip the shape mismatched param, param name {name}, \
                             current shape {param.data.shape} but loaded shape {s_param.data.shape}')

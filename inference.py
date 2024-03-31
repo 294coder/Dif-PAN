@@ -6,8 +6,9 @@ import torch
 import torch.utils.data as data
 import tqdm
 from scipy.io import savemat
-from datasets.TNO import TNODataset
+import colored_traceback.always
 
+from datasets.TNO import TNODataset
 from datasets.wv3 import WV3Datasets
 from datasets.HISR import HISRDatasets
 from datasets.gf import GF2Datasets
@@ -21,13 +22,14 @@ from utils import (
     unref_for_loop,
     ref_for_loop,
     config_py_load,
+    find_key_args_in_log,
     module_load
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:1"
+device = "cuda:0"
 torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "cave_x4"
 save_format = "mat"
 full_res = False
 split_patch = True
@@ -47,16 +49,19 @@ loop_func = (
         patch_size_list=patch_size_list,
         ergas_ratio=ergas_ratio,
         residual_exaggerate_ratio=5000,
+        sensor=dataset_type,
     )
     if not full_res
     else partial(
         unref_for_loop,
         hisi=dataset_type in ["cave", "cave_x8", "harvard", "harvard_x8", "gf5"],
         patch_size_list=patch_size_list,
+        sensor=dataset_type,
     )
 )
-name = "panMamba"
+name = "lformer_R"
 subarch = ""
+load_from_logs=False
 dl_bs = 1
 crop_bs = 2
 
@@ -107,10 +112,12 @@ print("=" * 50)
 # p = "./weight/lformer_dcu45ddw.pth"  # lformer
 
 # p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
+# p = './weight/lformer_880ksbwx.pth'  # lformer swin
+# p = './weight/lformer_R_niab8au9.pth'  # lformer reduced
 
 # p = './weight/MIMO_SST_1qpqmmnn.pth'
 
-p = './weight/panMamba_llib22wl.pth'
+# p = './weight/panMamba_llib22wl.pth'
 
 # ========================================================
 
@@ -126,6 +133,9 @@ p = './weight/panMamba_llib22wl.pth'
 
 # p = "./weight/dcformer_cave_x4.pth"  # dcformer new arch wx
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer 8 CAttn
+
+# p = './weight/lformer_3k98ra6i.pth'   # lformer_swin
+p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
@@ -183,9 +193,11 @@ p = './weight/panMamba_llib22wl.pth'
 
 # p = './weight/hpmnet_2re44fdd/ep_600.pth'
 
-# p = './weight/lformer_3dvlsog6.pth'
+# p = './weight/lformer_3dvlsog6.pth'  # lformer swin
+# p = './weight/lformer_R_2nj70ua7.pth'  # lformer reduced
 
 # p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+
 
 # p = './weight/MIMO_SST_eucdab2u.pth'
 # =================================================
@@ -203,6 +215,8 @@ p = './weight/panMamba_llib22wl.pth'
 # p = './weight/pannet_3knmo9wy.pth'  # pannet
 
 # p = "./weight/hpmnet_3vgc0ov9.pth"  # hpmnet
+
+# p = './weight/lformer_nf8l0jfk.pth'
 
 # p = './weight/MIMO_SST_2xfzvhd8.pth'
 # =================================================
@@ -260,11 +274,11 @@ if dataset_type == "wv3":
     else:
         # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
         path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
-elif dataset_type == "cave":
+elif dataset_type == "cave_x4":
     path = "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 elif dataset_type == "cave_x8":
     path = "/volsparse1/dataset/HISR/cave_x8/test_cave(with_up)x8_rgb.h5"
-elif dataset_type == "harvard":
+elif dataset_type == "harvard_x4":
     # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
     path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
 elif dataset_type == "harvard_x8":
@@ -274,7 +288,7 @@ elif dataset_type == "gf5":
         path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"
     else:
         path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_OrigScale.h5"
-elif dataset_type == "gf":
+elif dataset_type == "gf2":
     if not full_res:
         path = "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
     else:
@@ -301,12 +315,13 @@ else:
 
 # model = VanillaPANNet(8, 32).to('cuda:0')
 
-config = yaml_load(name)
-if name in ["panformer", "dcformer", "lformer", "panMamba"]:
-    full_arch = name + "_" + subarch if subarch != "" else name
-    model = build_network(full_arch, **config["network_configs"][full_arch])
+if load_from_logs:
+    config = find_key_args_in_log(name, subarch, dataset_type, p)
 else:
-    model = build_network(name, **config["network_configs"])
+    config = yaml_load(name)
+    
+full_arch = name + "_" + subarch if subarch != "" else name
+model = build_network(full_arch, **(config["network_configs"].get(full_arch, config["network_configs"])))
 
 # -------------------load params-----------------------
 # params = torch.load(p, map_location=device)
@@ -325,10 +340,10 @@ model.eval()
 if dataset_type in ["wv3", "qb", "wv2"]:
     d = h5py.File(path)
     ds = WV3Datasets(d, hp=False, full_res=full_res)
-elif dataset_type in ["cave", "harvard", "cave_x8", "harvard_x8", "gf5"]:
+elif dataset_type in ["cave_x4", "harvard_x4", "cave_x8", "harvard_x8", "gf5"]:
     d = h5py.File(path)
     ds = HISRDatasets(d, full_res=full_res)
-elif dataset_type == "gf":
+elif dataset_type == "gf2":
     d = h5py.File(path)
     ds = GF2Datasets(d, full_res=full_res)
 elif dataset_type == "roadscene":
@@ -349,11 +364,11 @@ d = {}
 # FIXME: there is an error here, const should be 1023. when sensor is gf
 if dataset_type in ["wv3", "qb", "wv2"]:
     const = 2047.0
-elif dataset_type in ["gf"]:
+elif dataset_type in ["gf2"]:
     const = 1023.0
 elif dataset_type in [
-    "cave",
-    "harvard",
+    "cave_x4",
+    "harvard_x4",
     "cave_x8",
     "harvard_x8",
     "roadscene",
@@ -375,8 +390,8 @@ if save_mat:  # torch.tensor(d['sr'][:, [4,2,0]]),  torch.tensor(d['gt'][:, [4,2
     _ref_or_not_s = "unref" if full_res else "ref"
     _patch_size_s = f"_p{patch_size}" if split_patch else ""
     if dataset_type not in [
-        "cave",
-        "harvard",
+        "cave_x4",
+        "harvard_x4",
         "cave_x8",
         "harvard_x8",
         "gf5",

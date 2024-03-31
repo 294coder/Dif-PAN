@@ -12,6 +12,7 @@
 	],
 	"settings": {
 		"files.autoSave": "afterDelay",
-		"editor.cursorSmoothCaretAnimation": "on"
+		"editor.cursorSmoothCaretAnimation": "on",
+		"python.languageServer": "Pylance"
 	}
 }

@@ -58,14 +58,20 @@ class AnalysisPanAcc(object):
             # @sensor in ['QB', 'IKONOS', 'WV2', 'WV3', 'default']
             assert 'sensor' in unref_factory_kwargs or 'default_max_value' in unref_factory_kwargs, \
                 '@sensor or @default_max_value should be specified in unrefactory_kwargs'
+                
             sensor = unref_factory_kwargs.pop('sensor', 'default').upper()
+            
             if sensor == 'DEFAULT': warn('sensor is not specified, use default sensor type')
             self.default_max_value = unref_factory_kwargs.pop('default_max_value', None)
+            
             if self.default_max_value is None: 
                 _default_max_value = {'QB': 2047, 'IKONOS': 1023, 'WV2': 2047, 'WV3': 2047, 
-                                      'GF2': 1023, 'DEFAULT': 2047}
+                                      'GF2': 1023, 'DEFAULT': 2047,
+                                      'CAVE_X4': 1, 'CAVE_X8': 1, 'HARVARD_X': 1, 'HARVARD_X8': 1,
+                                      'GF5':1, 'GF2-GF5': 1,}
                 self.default_max_value = _default_max_value.get(sensor)
-                warn(f'@default_max_value is not specified, set it according to @sensor: {sensor, self.default_max_value}')
+                print(f'>>> @default_max_value is not specified, set it according to @sensor:'
+                      f'{sensor, self.default_max_value}\n', '-'*20)
                 
             
             self.FS_metric_fn = partial(indexes_evaluation_FS, L=11, Qblocks_size=32, sensor=sensor,
