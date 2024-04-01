@@ -1,14 +1,16 @@
 optimizer:
   name: "adamw"
-  lr: !!float 6e-4
+  lr: !!float 3e-4
   weight_decay: !!float 1e-6
 
 lr_scheduler:
   #  name: 'cos_anneal'
-   name: 'cos_anneal_restart'
-   T_0: 50
-   T_mult: 2
-   eta_min: !!float 1e-6
+  name: 'cos_anneal_restart_reduce'
+  T_0: 100
+  T_mult: 2
+  lr_mult: 0.5
+  eta_min: !!float 1e-6
+   
   #  T_max: 2000
   #  eta_min: !!float 1e-8
 

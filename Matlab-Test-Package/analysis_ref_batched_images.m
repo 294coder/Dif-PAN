@@ -10,7 +10,7 @@ function res = analysis_ref_batched_images(path, ratio, full_res, const)
     thvalues = 0;
     
     L = 11;
-    flag_cut_bounds = 0;
+    flag_cut_bounds = 1;
 
     if full_res
         dim_cut = 21;

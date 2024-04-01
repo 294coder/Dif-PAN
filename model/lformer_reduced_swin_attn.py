@@ -533,7 +533,7 @@ class AttnFuseMain(BaseModel):
         return out.clip(0, 1)
 
     def patch_merge_step(self, ms, lms, pan):
-        return self._forward_implem(lms, pan)
+        return (self._forward_implem(lms, pan) + lms).clip(0, 1) - lms
 
 
 if __name__ == "__main__":

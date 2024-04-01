@@ -27,12 +27,13 @@ from utils import (
 )
 from utils.visualize import invert_normalized
 
-device = "cuda:0"
-torch.cuda.set_device(device)
-dataset_type = "cave_x4"
+device = "cuda:2"
+if device != 'cpu':
+    torch.cuda.set_device(device)
+dataset_type = "harvard_x8"
 save_format = "mat"
 full_res = False
-split_patch = True
+split_patch = False
 patch_size = 64
 ergas_ratio = 4
 patch_size_list = [
@@ -59,9 +60,9 @@ loop_func = (
         sensor=dataset_type,
     )
 )
-name = "lformer_R"
+name = "panMamba"
 subarch = ""
-load_from_logs=False
+load_from_logs=True
 dl_bs = 1
 crop_bs = 2
 
@@ -113,7 +114,8 @@ print("=" * 50)
 
 # p = './weight/lformer_6mfd1ea1.pth'  # lformer swin
 # p = './weight/lformer_880ksbwx.pth'  # lformer swin
-# p = './weight/lformer_R_niab8au9.pth'  # lformer reduced
+# p = './weight/lformer_R_niab8au9.pth'  # lformer reduced low full
+# p = './weight/lformer_R_3knyr4dr.pth'  # lformer reduced
 
 # p = './weight/MIMO_SST_1qpqmmnn.pth'
 
@@ -135,7 +137,8 @@ print("=" * 50)
 # p = './weight/dcformer_7u5y5qpi.pth'  # dcformer 8 CAttn
 
 # p = './weight/lformer_3k98ra6i.pth'   # lformer_swin
-p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
+# p = './weight/lformer_blpk13eu.pth'  # lformer swin
+# p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
 
 ####### cave_x8
 # p = "./weight/dcformer_15g03tzt.pth"  # 10->80
@@ -157,6 +160,8 @@ p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
 
 # p = './weight/dcformer_3rwfkdra.pth'  # dcformer new arch wx c_attn legacy low psnr
 # p = './weight/dcformer_dkwinunx.pth'  # dcformer 8 CAttn
+
+p = './weight/panMamba_1wotinai.pth'  # panMamba
 
 # p = './weight/MIMO_SST_pfjp3ssl.pth'  # MIMO_SST net
 
@@ -195,6 +200,7 @@ p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
 
 # p = './weight/lformer_3dvlsog6.pth'  # lformer swin
 # p = './weight/lformer_R_2nj70ua7.pth'  # lformer reduced
+# p = './weight/lformer_R_150ksqcw.pth'
 
 # p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
 
@@ -282,7 +288,7 @@ elif dataset_type == "harvard_x4":
     # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
     path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
 elif dataset_type == "harvard_x8":
-    path = "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
+    path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 elif dataset_type == "gf5":
     if not full_res:
         path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"
@@ -331,7 +337,7 @@ model = build_network(full_arch, **(config["network_configs"].get(full_arch, con
 
 
 # model.load_state_dict(params["model"])
-model = module_load(p, model, device, strict=True)
+model = module_load(p, model, device, strict=False)
 model = model.to(device)
 model.eval()
 # -----------------------------------------------------

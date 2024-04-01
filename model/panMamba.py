@@ -754,11 +754,11 @@ class UniSequential(nn.Module):
             outp = mod(outp, cond)
         return outp
     
-    # @get_local('outp', 'global_state')
+    @get_local('outp', 'global_state')
     def LEMM_enc_forward(self, 
                          feat, 
                          cond,
-                         c_shuffle=True,
+                         c_shuffle=False,
                          states=[None, None]):
         outp = feat
         local_state, global_state = states[0], states[1]

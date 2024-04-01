@@ -68,7 +68,22 @@ class LinearWarmupScheduler:
     def step(self):
         self.opt.param_groups[0]["lr"] = self.values[self.now_index]
         self.now_index += 1
+        
+        
+class CosineAnnealingWarmRestartsReduce(CosineAnnealingWarmRestarts):
+    def __init__(self, opt: optim.Optimizer, T_0, T_mult=1, lr_mult=1, eta_min=0, last_epoch=-1):
+        self.opt = opt
+        self.lr_mult = lr_mult
+        super().__init__(opt, T_0, T_mult, eta_min, last_epoch)
 
+    def step(self, epoch=None):
+        super().step(epoch)
+        
+        if self.T_cur == self.T_i-1 and self.last_epoch != 0:
+            # reduce the base lr
+            for i in range(len(self.base_lrs)):
+                self.base_lrs[i] *= self.lr_mult
+                
 
 def get_scheduler(optim, **kwargs):
     """
@@ -86,6 +101,8 @@ def get_scheduler(optim, **kwargs):
         return CosineAnnealingLR(optim, **kwargs)
     elif name == "cos_anneal_restart":
         return CosineAnnealingWarmRestarts(optim, **kwargs)
+    elif name == "cos_anneal_restart_reduce":
+        return CosineAnnealingWarmRestartsReduce(optim, **kwargs)
     elif name == "multi_step":
         return MultiStepLR(optim, **kwargs)
     elif name == "plateau":
@@ -117,24 +134,28 @@ if __name__ == "__main__":
     init_lr = 1e-3
     final_lr = 1e-6
     epochs = 500
-    nither_per_ep = int(np.ceil(3000 // 16))  # len(datasets) / batch_size
-    warm_epochs = 80
-    start_warmup_value = init_lr
-    cos_sche = cosine_scheduler(
-        init_lr, final_lr, epochs, nither_per_ep, warm_epochs, start_warmup_value
-    )
-    plt.plot(list(map(lambda x: x / nither_per_ep, range(len(cos_sche)))), cos_sche)
+    # nither_per_ep = int(np.ceil(3000 // 16))  # len(datasets) / batch_size
+    # warm_epochs = 80
+    # start_warmup_value = init_lr
+    # cos_sche = cosine_scheduler(
+    #     init_lr, final_lr, epochs, nither_per_ep, warm_epochs, start_warmup_value
+    # )
+    # plt.plot(list(map(lambda x: x / nither_per_ep, range(len(cos_sche)))), cos_sche)
     # plt.show()
 
     # torch cosine annealing lr scheduler
     net = nn.Sequential(nn.Linear(8, 64))
     optimizer = optim.AdamW(net.parameters(), lr=init_lr)
-    cos_sche2 = CosineAnnealingLR(optimizer, epochs - warm_epochs, final_lr)
+    # cos_sche2 = CosineAnnealingLR(optimizer, epochs - warm_epochs, final_lr)
+    cos_anneal_reduce_sche = CosineAnnealingWarmRestartsReduce(optimizer, 50, 2, 0.5, 1e-6, last_epoch=-1)
+    
     lr = []
-    for i in range(500):
+    for i in range(200, 500):
         l = optimizer.param_groups[0]["lr"]
         lr.append(l)
-        if i > warm_epochs:
-            cos_sche2.step()
-    plt.plot(range(500), lr)
-    plt.show()
+        # if i > warm_epochs:
+        #     cos_sche2.step()
+        cos_anneal_reduce_sche.step(i)
+    plt.plot(range(200, 500), lr)
+    # plt.show()
+    plt.savefig('cos_anneal_reduce.png')

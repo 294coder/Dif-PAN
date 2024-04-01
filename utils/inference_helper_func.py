@@ -72,14 +72,6 @@ def unref_for_loop(model,
         if split_patch:
             input = (ms, lms, pan)
             if hasattr(model, 'forward_chop'):
-                # split the image into several patches to avoid gpu OOM
-                # pan_nc = pan.size(1)
-                # ms_nc = ms.size(1)
-                # input = (
-                #     F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
-                #     lms,
-                #     torch.cat([pan, torch.zeros(bs, ms_nc - pan_nc, *spa_size).to(device)], dim=1)
-                # )
                 sr = model.forward_chop(*input)[0]
             elif patch_merge_in_val_step(model):
                 sr = model.val_step(*input, patch_merge=True)
@@ -126,6 +118,10 @@ def ref_for_loop(model,
             model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
     for i, (pan, ms, lms, gt) in inference_bar:
         pan, ms, lms, gt = pan.to(device).float(), ms.to(device).float(), lms.to(device).float(), gt.to(device).float()
+        
+        pan, lms, gt = map(lambda x: F.interpolate(x, size=(512, 512), mode='bilinear'), [pan, lms, gt])
+        ms = F.interpolate(ms, size=(512//ergas_ratio, 512//ergas_ratio), mode='bilinear')
+        
         # split the image into several patches to avoid gpu OOM
         if split_patch:
             input = (ms, lms, pan)
@@ -145,14 +141,14 @@ def ref_for_loop(model,
         # attns = cache['MSReversibleRefine.forward']
         # # attns = cache['FirstAttn.forward']
         
-        # cache = get_local().cache
-        # feat_ssm_states = cache['UniSequential.LEMM_enc_forward']
+        cache = get_local().cache
+        feat_ssm_states = cache['UniSequential.LEMM_enc_forward']
         
         # torch.save(attns, f'/volsparse1/czh/exps/fcformer-bk/visualized_img/attns/attns_{i}.pth')
         
-        # torch.save(feat_ssm_states, f'/Data2/ZiHanCao/exps/panformer/visualized_img/feat_ssm_states/feat_ssm_states_{i}.pth')
-        # print('saved pth file...')
-        # get_local.clear()
+        torch.save(feat_ssm_states, f'/Data2/ZiHanCao/exps/panformer/visualized_img/feat_ssm_states/feat_ssm_states_{i}.pth')
+        print('saved pth file...')
+        get_local.clear()
                 
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
@@ -264,10 +260,10 @@ def find_key_args_in_log(arch, sub_arch, datasets, weight_path):
         sub_arch = '_' + sub_arch
     else:
         sub_arch = ''
-    log_path = f'log_file/{arch}{sub_arch}/{datasets}/*{run_id}*/config.json'
-    log_path = glob.glob(log_path)
+    _log_path = f'log_file/{arch}{sub_arch}/{datasets}/*{run_id}*/config.json'
+    log_path = glob.glob(_log_path)
     if len(log_path) != 1:
-        raise RuntimeError(f'>>> log file: {log_path} not exists!')
+        raise RuntimeError(f'>>> log file: {_log_path} not exists!')
     print(f'>>> found run id: {log_path[0]} config')
     args = json.loads(''.join(open(log_path[0], 'r').readlines()))
     

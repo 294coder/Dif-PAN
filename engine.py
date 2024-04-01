@@ -3,7 +3,6 @@ from functools import partial
 import math
 from typing import Callable, List, Union
 
-import einops
 import torch
 import torch.cuda.amp as amp
 import torch.distributed as dist
@@ -165,9 +164,8 @@ def train(
     save_checker = lambda *check_args: check_save_fn(check_args[0]) if check_save_fn is not None else \
                     lambda val_acc_dict, val_loss, optim_val_loss: val_loss < optim_val_loss
     
-    warm_up_scheduler = LinearWarmupScheduler(
-        optim, 0, args.optimizer.lr, warm_up_epochs
-    )
+    if warm_up_epochs > 0:
+        warm_up_scheduler = LinearWarmupScheduler(optim, 0, args.optimizer.lr, warm_up_epochs)
     world_size = args.world_size if ddp else None
     optim_val_loss = math.inf
     fp_scaler = amp.GradScaler() if fp16 else None
@@ -215,10 +213,11 @@ def train(
                 context = model.no_sync if grad_accm and ddp else nullcontext
                 with context():
                     step_loss_backward_partial(grad_accum=grad_accm)
-                if grad_accm and False:
-                    logger.print("*" * 20, "grad_accm", "*" * 20)
+                # if grad_accm and False:
+                #     logger.print("*" * 20, "grad_accm", "*" * 20)
             else:
-                step_loss_backward_partial(grad_accum=False)
+                grad_accm = False
+                step_loss_backward_partial(grad_accum=grad_accm)
             ema_net.update()
 
         # scheduler update
@@ -226,9 +225,11 @@ def train(
             if isinstance(lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                 lr_scheduler.step(loss)
             else:
-                lr_scheduler.step()
-        else:
+                lr_scheduler.step(ep)
+        elif warm_up_epochs > 0:
             warm_up_scheduler.step()
+        else:
+            raise RuntimeError('there should have at least one lr scheduler update')
 
         # eval
         if ep % eval_every_epochs == 0:
@@ -241,10 +242,6 @@ def train(
             
             def collect_params():
                 params = {}
-                # try:
-                #     params["model"] = model.module.state_dict()
-                # except Exception:  # any threw error
-                #     params["model"] = model.state_dict()
                 params["model"] = model_params(model)
                 params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
                 params["epochs"] = ep
