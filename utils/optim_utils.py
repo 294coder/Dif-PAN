@@ -22,10 +22,6 @@ class IdentityScheduler:
     def state_dict(self):
         return self.kwargs
 
-
-
-
-
 def cosine_scheduler(
     base_value, final_value, epochs, niter_per_ep, warmup_epochs=0, start_warmup_value=0
 ):
@@ -83,6 +79,7 @@ class CosineAnnealingWarmRestartsReduce(CosineAnnealingWarmRestarts):
             # reduce the base lr
             for i in range(len(self.base_lrs)):
                 self.base_lrs[i] *= self.lr_mult
+                self.base_lrs[i] = max(self.base_lrs[i], self.eta_min)
                 
 
 def get_scheduler(optim, **kwargs):

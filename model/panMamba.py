@@ -30,9 +30,9 @@ sys.path.append("../")
 from model.module.vmamba_module_v3 import VSSBlock
 from model.module.layer_norm import LayerNorm as LayerNorm2d
 from model.base_model import BaseModel, register_model, PatchMergeModule
-from utils import get_local
+# from utils import get_local
 
-get_local.activate()
+# get_local.activate()
 
 
 def exists(x):
@@ -754,7 +754,7 @@ class UniSequential(nn.Module):
             outp = mod(outp, cond)
         return outp
     
-    @get_local('outp', 'global_state')
+    # @get_local('outp', 'global_state')
     def LEMM_enc_forward(self, 
                          feat, 
                          cond,

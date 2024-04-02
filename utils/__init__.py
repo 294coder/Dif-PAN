@@ -53,7 +53,7 @@ from utils.optim_utils import (
 )
 from utils.network_utils import (
     variance_scaling_initializer,
-    clip_norm,
+    clip_norm_,
     loss_with_l2_regularization,
     step_loss_backward,
     hook_model,

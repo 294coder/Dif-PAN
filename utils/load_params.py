@@ -62,6 +62,10 @@ def module_load(path, model, device, ddp_rank=None, strict=True, spec_key='ema_m
     return model
 
 
+def resume_load_accelerate(path,):
+    ...
+
+
 def resume_load(path,
                 model,
                 optim,

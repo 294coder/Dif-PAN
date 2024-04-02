@@ -211,19 +211,29 @@ class CheckPointManager(object):
             )
 
 
-def is_main_process():
+def is_main_process(func=None):
     """
     check if current process is main process in ddp
     warning: if not in ddp mode, always return True
     :return:
     """
-    if dist.is_initialized():
-        return dist.get_rank() == 0
+    def _is_main_proc():
+        if dist.is_initialized():
+            return dist.get_rank() == 0
+        else:
+            return True
+        
+    if func is None:
+        return _is_main_proc()
     else:
-        return True
-
+        def warp_func(*args, **kwargs):
+            if _is_main_proc():
+                return func(*args, **kwargs)
+            
+        return warp_func
 
 def print_args(args):
+    
     d = args.__dict__
     for k, v in d.items():
         print(f"{k}: {v}")

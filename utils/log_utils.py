@@ -9,14 +9,12 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Union, Sequence, Iterable
 import signal
 
-import beartype
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-from aim import Distribution, Image, Repo, Run, Session, Text
 from torch.utils.tensorboard import SummaryWriter
-from torch import NoneType, nn
+from torch import nn
 from torchvision.utils import make_grid
 
 from utils.misc import NameSpace, is_main_process
@@ -391,6 +389,7 @@ class NoneLogger:
     def log_network(self, *args, **kwargs):
         pass
     
+    @is_main_process
     def print(self, *msg, level=None):
         msgs = ""
         for s in msg:
@@ -446,6 +445,7 @@ class TensorboardLogger:
                 f"\nmove config file to {os.path.abspath(self.log_file_dir)}", "INFO"
             )
 
+    @is_main_process
     def watch(self, network: nn.Module, watch_type: str, freq: int):
         assert watch_type in (
             "all",
@@ -465,9 +465,11 @@ class TensorboardLogger:
             self.hooks[n] = hook
             p.register_hook(hook)
 
+    @is_main_process
     def log_curve(self, x, name, epoch):
         self.writer.add_scalar(name, x, epoch)
 
+    @is_main_process
     def log_curves(self, x_dict: Dict, epoch):
         # for example:
         # for i in range(100):
@@ -478,7 +480,8 @@ class TensorboardLogger:
         # self.writer.add_scalars(main_name, x_dict, epoch)
         for k, v in x_dict.items():
             self.writer.add_scalar(k, v, epoch)
-
+    
+    @is_main_process
     def log_image(self, image, name, epoch):
         if image.ndim == 3:
             assert image.shape[0] <= 3, (
@@ -487,6 +490,7 @@ class TensorboardLogger:
             )
         self.writer.add_image(name, image, epoch, dataformats="CHW")
 
+    @is_main_process
     def log_images(self, batch_imgs: Sequence, nrow: int, names: Sequence,
                    epoch: int, ds_name: str, **grid_kwargs):
         for batch_img, name in zip(batch_imgs, names):
@@ -494,6 +498,7 @@ class TensorboardLogger:
             grid_img = make_grid(batch_img, nrow=nrow, **grid_kwargs)
             self.log_image(grid_img, name, epoch)
 
+    @is_main_process
     def log_network(self, network: nn.Module, ep: int):
         if self.watch_type != "None":
             if ep % self.freq == 0:
@@ -504,6 +509,7 @@ class TensorboardLogger:
                         self.writer.add_histogram(n + "_data", p.flatten(), ep)
                     self.writer.add_histogram(n + "_grad", g.flatten(), ep)
 
+    @is_main_process
     def print(self, *msg, level="INFO"):
         level_int = eval(f"logging.{level}")
         msgs = ""
@@ -512,169 +518,171 @@ class TensorboardLogger:
         self.file_logger.log(level=level_int, msg=msgs)
 
 
-class AimLogger(object):
-    def __init__(
-        self, run_name, resume_hash_name=None, hparams=None, cap_term_logs=True,
-        *,
-        desp=None,
-    ):
-        """Aim framewarke logger
+# from aim import Distribution, Image, Repo, Run, Session, Text
 
-        Args:
-            run_name (str): experiment name
-            resume_hash_name (str, optional): set it if you want to resume training. Defaults to None.
-            hparams (dict, optional): dict of some hyperparameters of your experiments. Defaults to None.
-            cap_term_logs (bool, optional): capture terminal logs. Defaults to True.
-            desp (str, optional): short description of your experiment. Defaults to None.
-        """
-        self.run = Run(
-            resume_hash_name,
-            experiment=run_name,
-            capture_terminal_logs=cap_term_logs,
-            log_system_params=False,
-        )
-        setattr(self.run, 'description', desp)
-        self.run["hparams"] = hparams
-        self.log_info("log params:", hparams)
-        self.run_name = run_name
-        self.repo = Repo("./")
+# class AimLogger(object):    
+#     def __init__(
+#         self, run_name, resume_hash_name=None, hparams=None, cap_term_logs=True,
+#         *,
+#         desp=None,
+#     ):
+#         """Aim framewarke logger
 
-    def _convert_uint8_img(self, img):
-        # TODO: to suit PIL package, convert the image into unit8 type
-        # ref to https://pillow.readthedocs.io/en/stable/handbook/concepts.html
+#         Args:
+#             run_name (str): experiment name
+#             resume_hash_name (str, optional): set it if you want to resume training. Defaults to None.
+#             hparams (dict, optional): dict of some hyperparameters of your experiments. Defaults to None.
+#             cap_term_logs (bool, optional): capture terminal logs. Defaults to True.
+#             desp (str, optional): short description of your experiment. Defaults to None.
+#         """
+#         self.run = Run(
+#             resume_hash_name,
+#             experiment=run_name,
+#             capture_terminal_logs=cap_term_logs,
+#             log_system_params=False,
+#         )
+#         setattr(self.run, 'description', desp)
+#         self.run["hparams"] = hparams
+#         self.log_info("log params:", hparams)
+#         self.run_name = run_name
+#         self.repo = Repo("./")
+
+#     def _convert_uint8_img(self, img):
+#         # TODO: to suit PIL package, convert the image into unit8 type
+#         # ref to https://pillow.readthedocs.io/en/stable/handbook/concepts.html
         
-        # Aim package only support uint8 type image :>
-        if isinstance(img, torch.Tensor):
-            img = img.detach().cpu().numpy()
-        img = img - img.min()
-        img = img / img.max()
-        img = (img * 255).astype(np.uint8)
+#         # Aim package only support uint8 type image :>
+#         if isinstance(img, torch.Tensor):
+#             img = img.detach().cpu().numpy()
+#         img = img - img.min()
+#         img = img / img.max()
+#         img = (img * 255).astype(np.uint8)
 
-        return img
+#         return img
 
-    def log_image(self, image, name=None, epoch=None, context=None):
-        # check image type
-        if isinstance(image, np.ndarray):
-            assert image.ndim in [3, 2]
-            img = Image(self._convert_uint8_img(image))
+#     def log_image(self, image, name=None, epoch=None, context=None):
+#         # check image type
+#         if isinstance(image, np.ndarray):
+#             assert image.ndim in [3, 2]
+#             img = Image(self._convert_uint8_img(image))
             
-        # TODO: convert the Tensor into ndarray is really slow
-        elif isinstance(image, torch.Tensor):
-            assert image.ndim in [4, 3, 2]
-            if image.ndim == 4:
-                nrows = math.sqrt(image.shape[0])
-                image = make_grid(image, nrow=nrows)
-                img = Image(image)
-            elif image.ndim in [3, 2]:
-                img = Image(self._convert_uint8_img(image))
-            else:
-                self.run.log_warning(f"not support image shape {image.shape}")
-        elif isinstance(image, plt.Figure):
-            img = Image(image)
-        else:
-            img = image
+#         # TODO: convert the Tensor into ndarray is really slow
+#         elif isinstance(image, torch.Tensor):
+#             assert image.ndim in [4, 3, 2]
+#             if image.ndim == 4:
+#                 nrows = math.sqrt(image.shape[0])
+#                 image = make_grid(image, nrow=nrows)
+#                 img = Image(image)
+#             elif image.ndim in [3, 2]:
+#                 img = Image(self._convert_uint8_img(image))
+#             else:
+#                 self.run.log_warning(f"not support image shape {image.shape}")
+#         elif isinstance(image, plt.Figure):
+#             img = Image(image)
+#         else:
+#             img = image
 
-        self.run.track(img, name=name, epoch=epoch, context=context)
+#         self.run.track(img, name=name, epoch=epoch, context=context)
 
-    def log_text(self, text, name=None, epoch=None, context=None):
-        self.run.track(Text(text), name=name, epoch=epoch, context=context)
+#     def log_text(self, text, name=None, epoch=None, context=None):
+#         self.run.track(Text(text), name=name, epoch=epoch, context=context)
     
-    @beartype.beartype()
-    def log_metrics(self, metrics, name=None, epoch=None, context: dict = None):
-        """log metrics or other values
+#     @beartype.beartype()
+#     def log_metrics(self, metrics, name=None, epoch=None, context: dict = None):
+#         """log metrics or other values
 
-        Args:
-            metrics (dict or values): a dict or values to log
-            epoch (_type_): _description_
-            context (_type_, optional): _description_. Defaults to None.
-        """
-        self.run.track(metrics, name=name, epoch=epoch, context=context)
+#         Args:
+#             metrics (dict or values): a dict or values to log
+#             epoch (_type_): _description_
+#             context (_type_, optional): _description_. Defaults to None.
+#         """
+#         self.run.track(metrics, name=name, epoch=epoch, context=context)
 
-    @beartype.beartype()
-    def log_distribution(
-        self,
-        distribution,
-        name=None,
-        epoch=None,
-        context: dict = None,
-    ):
-        #######################################################################
-        # !!!!
-        # warning: the context must be a dict or it will explode your aim repo
-        # I don't know why, maybe it is a bug
-        #######################################################################
-        distribution = distribution.flatten()
+#     @beartype.beartype()
+#     def log_distribution(
+#         self,
+#         distribution,
+#         name=None,
+#         epoch=None,
+#         context: dict = None,
+#     ):
+#         #######################################################################
+#         # !!!!
+#         # warning: the context must be a dict or it will explode your aim repo
+#         # I don't know why, maybe it is a bug
+#         #######################################################################
+#         distribution = distribution.flatten()
 
-        if isinstance(distribution, torch.Tensor):
-            distribution = distribution.detach().cpu().numpy()
+#         if isinstance(distribution, torch.Tensor):
+#             distribution = distribution.detach().cpu().numpy()
 
-        # hist, bins = np.histogram(distribution, bins=64 if 64 < len(distribution) else len(distribution))
-        # bin range is
-        # bin_range = [bins[0], bins[-1]]
+#         # hist, bins = np.histogram(distribution, bins=64 if 64 < len(distribution) else len(distribution))
+#         # bin range is
+#         # bin_range = [bins[0], bins[-1]]
 
-        self.run.track(
-            Distribution(distribution), name=name, epoch=epoch, context=context
-        )
+#         self.run.track(
+#             Distribution(distribution), name=name, epoch=epoch, context=context
+#         )
 
-    def log_network(self, network: nn.Module, epoch: int = None):
-        # refer to the warning in @log_distribution, it's important
-        # I set the @context into a dict, do not change it
-        for n, p in network.named_parameters():
-            p = p.flatten().detach().cpu().numpy()
-            # context = {"net_params_dist": n}
-            self.log_distribution(
-                p, name="network_params", epoch=epoch, context={"net_params_dist": n}  # do not change
-            )
+#     def log_network(self, network: nn.Module, epoch: int = None):
+#         # refer to the warning in @log_distribution, it's important
+#         # I set the @context into a dict, do not change it
+#         for n, p in network.named_parameters():
+#             p = p.flatten().detach().cpu().numpy()
+#             # context = {"net_params_dist": n}
+#             self.log_distribution(
+#                 p, name="network_params", epoch=epoch, context={"net_params_dist": n}  # do not change
+#             )
 
-    def close(self):
-        # close the run
-        # finilize and close, may one of them will take effect
-        self.run.finalize()
-        self.run.close()
-        print("logger closed")
+#     def close(self):
+#         # close the run
+#         # finilize and close, may one of them will take effect
+#         self.run.finalize()
+#         self.run.close()
+#         print("logger closed")
 
-    def _make_msg_one_text(self, *msg):
-        if isinstance(msg[0], str) and len(msg) == 1:
-            return msg[0]
-        fin_msg = ""
-        for m in msg:
-            fin_msg += str(m)
-        return fin_msg
+#     def _make_msg_one_text(self, *msg):
+#         if isinstance(msg[0], str) and len(msg) == 1:
+#             return msg[0]
+#         fin_msg = ""
+#         for m in msg:
+#             fin_msg += str(m)
+#         return fin_msg
     
-    ######## override those functions #########
-    def log_info(self, *msg):
-        self.run.log_info(self._make_msg_one_text(*msg))
+#     ######## override those functions #########
+#     def log_info(self, *msg):
+#         self.run.log_info(self._make_msg_one_text(*msg))
 
-    def log_warning(self, *msg):
-        self.run.log_warning(self._make_msg_one_text(*msg))
+#     def log_warning(self, *msg):
+#         self.run.log_warning(self._make_msg_one_text(*msg))
 
-    def log_error(self, *msg):
-        self.run.log_error(self._make_msg_one_text(*msg))
+#     def log_error(self, *msg):
+#         self.run.log_error(self._make_msg_one_text(*msg))
 
-    def log_debug(self, *msg):
-        self.run.log_debug(self._make_msg_one_text(*msg))
-    ###########################################
+#     def log_debug(self, *msg):
+#         self.run.log_debug(self._make_msg_one_text(*msg))
+#     ###########################################
 
-    # repo control
-    # may be not used
-    def delete_run(self, run_hash=None):
-        # sometimes the run is locked, so we need to release it
-        # or just delete it
-        print(
-            "warning, deleting run: {}".format(run_hash if run_hash else self.run.hash)
-        )
-        run = self.repo.get_run(run_hash if run_hash else self.run.hash)
-        # run._lock.release()  # will raise Nonetype do not have the attribute
-        run.read_only = False
-        ans = input("press [y/n] to confirm deleting")
-        if ans == "y":
-            d_m = self.repo.delete_run(run_hash)
-            print("deleted {}: {}".format(run.hash, d_m))
-        elif ans == "n":
-            print("canceled")
-        else:
-            print("invalid input, canceled")
+#     # repo control
+#     # may be not used
+#     def delete_run(self, run_hash=None):
+#         # sometimes the run is locked, so we need to release it
+#         # or just delete it
+#         print(
+#             "warning, deleting run: {}".format(run_hash if run_hash else self.run.hash)
+#         )
+#         run = self.repo.get_run(run_hash if run_hash else self.run.hash)
+#         # run._lock.release()  # will raise Nonetype do not have the attribute
+#         run.read_only = False
+#         ans = input("press [y/n] to confirm deleting")
+#         if ans == "y":
+#             d_m = self.repo.delete_run(run_hash)
+#             print("deleted {}: {}".format(run.hash, d_m))
+#         elif ans == "n":
+#             print("canceled")
+#         else:
+#             print("invalid input, canceled")
     
-    @property
-    def hash(self):
-        return self.run.hash
+#     @property
+#     def hash(self):
+#         return self.run.hash

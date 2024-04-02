@@ -119,7 +119,7 @@ print("=" * 50)
 
 # p = './weight/MIMO_SST_1qpqmmnn.pth'
 
-# p = './weight/panMamba_llib22wl.pth'
+p = './weight/panMamba_llib22wl.pth'
 
 # ========================================================
 
@@ -161,7 +161,7 @@ print("=" * 50)
 # p = './weight/dcformer_3rwfkdra.pth'  # dcformer new arch wx c_attn legacy low psnr
 # p = './weight/dcformer_dkwinunx.pth'  # dcformer 8 CAttn
 
-p = './weight/panMamba_1wotinai.pth'  # panMamba
+# p = './weight/panMamba_1wotinai.pth'  # panMamba
 
 # p = './weight/MIMO_SST_pfjp3ssl.pth'  # MIMO_SST net
 

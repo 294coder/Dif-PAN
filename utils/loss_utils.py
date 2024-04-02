@@ -10,6 +10,7 @@ import numpy as np
 from math import exp
 import lpips
 
+from utils.misc import is_main_process
 from utils.torch_dct import dct_2d, idct_2d
 from utils._vgg import vgg16
 from utils._ydtr_loss import ssim_loss_ir, ssim_loss_vi, sf_loss_ir, sf_loss_vi
@@ -248,7 +249,7 @@ def ave_ep_loss(ep_loss_dict: dict, ep_iters: int):
         ep_loss_dict[k] = v / ep_iters
     return ep_loss_dict
 
-
+@is_main_process  
 def ave_multi_rank_dict(rank_loss_dict: list[dict]):
     ave_dict = {}
     n = len(rank_loss_dict)
@@ -262,7 +263,6 @@ def ave_multi_rank_dict(rank_loss_dict: list[dict]):
             vs = vs + v
         ave_dict[k] = vs / n
     return ave_dict
-
 
 class HybridL1SSIM(torch.nn.Module):
     def __init__(self, channel=31, weighted_r=(1.0, 0.1)):

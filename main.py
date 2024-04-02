@@ -8,7 +8,8 @@ import torch
 import torch.nn as nn
 import torch.utils.data as data
 import torch.distributed as dist
-import colored_traceback.always
+from rich.traceback import install
+install()
 from wandb.util import generate_id
 
 from engine import train
@@ -31,13 +32,13 @@ from utils import (
 )
 
 
-def get_args():
+def get_main_args():
     parser = argparse.ArgumentParser("PANFormer")
 
     # network
     parser.add_argument("-a", "--arch", type=str, default="pannet")
     parser.add_argument("--sub_arch", default=None, help="panformer sub-architecture name")
-
+    
     # train config
     parser.add_argument("--pretrain", action="store_true", default=False)
     parser.add_argument("--pretrain_id", type=str, default=None)
@@ -46,7 +47,7 @@ def get_args():
     parser.add_argument("--val_n_epoch", type=int, default=30)
     parser.add_argument("--warm_up_epochs", type=int, default=80)
     parser.add_argument( "-l", "--loss", type=str, default="mse", choices=[ "mse", "l1", "hybrid", "smoothl1", "l1ssim", "charbssim", "ssimsf", "ssimmci", "mcgmci", "ssimrmi_fuse", "pia_fuse", "u2fusion", "swinfusion", "hpm", "none", "None",],)
-    parser.add_argument("--grad_accum_ep", type=int, default=None)
+    parser.add_argument("--grad_accum_steps", type=int, default=None)
     parser.add_argument("--save_every_eval", action="store_true", default=False)
 
     # resume training config
@@ -142,8 +143,8 @@ def main(local_rank, args):
         network = network.to(args.device)
 
     # optimization
-    if args.grad_accum_ep is not None:
-        lr_adjust_ratio = 1.0 #args.grad_accum_ep
+    if args.grad_accum_steps is not None:
+        lr_adjust_ratio = 1.0 #args.grad_accum_steps
     else:
         lr_adjust_ratio = 1.0
     args.optimizer.lr *= lr_adjust_ratio
@@ -357,8 +358,7 @@ def main(local_rank, args):
     # save checker
     save_checker = BestMetricSaveChecker(metric_name="PSNR", check_order="up")
 
-    # start training 
-    # TODO: use safetensor
+    # start training
     with status_tracker:
         train(
             network,
@@ -377,16 +377,14 @@ def main(local_rank, args):
             check_save_fn=save_checker,
             fp16=args.fp16,
             max_norm=args.max_norm,
-            grad_accum_ep=args.grad_accum_ep,
+            grad_accum_steps=args.grad_accum_steps,
             args=args,
         )
 
     # logger finish
     status_tracker.update_train_status("done")
     if is_main_process() and logger is not None:
-        # logger.run.finish()
         logger.writer.close()
-
 
 if __name__ == "__main__":
     import torch.multiprocessing as mp
@@ -396,13 +394,16 @@ if __name__ == "__main__":
     os.environ["HF_HOME"] = ".cache/transformers"
     os.environ["MPLCONFIGDIR"] = ".cache/matplotlib"
 
-    args = get_args()
-    # print(args)
-
+    args = get_main_args()
+    
     if (not args.ddp) and (not args.dp): 
-        print('>>> using one gpu')
+        print('>>> TORCH: using one gpu')
         main(args.device, args)
     else:
         print('>>> SPAWN: using multiple gpus')
         # TODO: resort to accelerator method, to avoid multi-processing dataloader using more RAM
         mp.spawn(main, args=(args,), nprocs=args.world_size if args.ddp else 1)
+    
+        
+        
+        

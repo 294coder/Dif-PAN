@@ -1,15 +1,15 @@
 optimizer:
   name: "adamw"
-  lr: !!float 3e-4
+  lr: !!float 6e-4
   weight_decay: !!float 1e-6
 
 lr_scheduler:
   #  name: 'cos_anneal'
   name: 'cos_anneal_restart_reduce'
-  T_0: 100
+  T_0: 50
   T_mult: 2
   lr_mult: 0.5
-  eta_min: !!float 1e-6
+  eta_min: !!float 2e-6
    
   #  T_max: 2000
   #  eta_min: !!float 1e-8
@@ -54,9 +54,9 @@ path:
 
 network_configs:
   panMamba:
-    img_channel: 31
-    condition_channel: 3
-    out_channel: 31
+    img_channel: 4
+    condition_channel: 1
+    out_channel: 4
 
     ## base config
     # v2
@@ -100,7 +100,7 @@ network_configs:
     if_abs_pos: no # buggy: convergence is slow
     if_rope: no
     patch_merge: yes
-    upscale: 8
+    upscale: 4
 
   panMamba_only_NAF:
     img_channel: 8

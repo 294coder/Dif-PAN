@@ -7,9 +7,6 @@ import torch
 import torch.nn as nn
 
 
-# from model.base_model import BaseModel
-
-
 def hook_model(model: nn.Module, saved_tensor, hook_class):
     def feature_hook(_, input, output):
         # forward hook
@@ -93,20 +90,27 @@ def model_device(model: Union[nn.Module, nn.DataParallel,
     return p0.device
 
 
-def clip_norm(max_norm, network, fp_scaler=None, optim=None):
+def clip_norm_(max_norm, network, fp_scaler=None, optim=None):
     if fp_scaler is not None:
         fp_scaler.unscale_(optim)
-    torch.nn.utils.clip_grad_norm_(network.parameters(), max_norm)
+    torch.nn.utils.clip_grad.clip_grad_norm_(network.parameters(), max_norm)
+    
+def clip_value_(max_value, network, fp_scaler=None, optim=None):
+    if fp_scaler is not None:
+        fp_scaler.unscale_(optim)
+    torch.nn.utils.clip_grad.clip_grad_value_(network.parameters(), max_value)
 
 
 def step_loss_backward(
         optim,
         network=None,
         max_norm=None,
+        max_value=None,
         loss=None,
         fp16=False,
         fp_scaler=None,
         grad_accum=False,
+        accelerator=None
 ):
     """
 
@@ -126,14 +130,28 @@ def step_loss_backward(
     if fp16:
         fp_scaler.scale(loss).backward()
         if max_norm is not None:
-            clip_norm(max_norm, network, fp_scaler, optim)
+            clip_norm_(max_norm, network, fp_scaler, optim)
         if not grad_accum:
             fp_scaler.step(optim)
             fp_scaler.update()
     else:
-        loss.backward()
+        if accelerator is None:
+            loss.backward()
+        else:
+            accelerator.backward(loss)
+        
+        # assert max_norm and max_value can not be set at the same time
         if max_norm is not None:
-            clip_norm(max_norm, network)
+            if accelerator is not None:
+                accelerator.clip_grad_norm_(max_value)
+            else:
+                clip_norm_(max_norm, network)
+        elif max_value is not None:
+            if accelerator is not None:
+                accelerator.clip_grad_value_(max_value)
+            else:
+                clip_value_(network.parameters(), max_value)
+                
         if not grad_accum:
             optim.step()
 
