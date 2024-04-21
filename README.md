@@ -20,7 +20,7 @@
 </p>
 
 News:
-- 2024/4/21: **A new paper about [Schrodinger Bridge Method for image fusion](https://arxiv.org/abs/2404.11416) is released on arxiv.**🤗
+- 2024/4/21: **A new paper about [Schrodinger Bridge Method for image fusion](https://arxiv.org/abs/2404.11416) is released on arxiv**.🤗
 
 - 2023/12/4：**Code RELEASED!**:fire: 
 
